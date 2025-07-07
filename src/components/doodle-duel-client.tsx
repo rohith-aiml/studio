@@ -420,7 +420,7 @@ const DrawingCanvas = React.forwardRef<HTMLCanvasElement, {
                 onTouchStart={startDrawing}
                 onTouchMove={draw}
                 onTouchEnd={stopDrawing}
-                className={cn("bg-white rounded-lg shadow-inner w-full h-auto aspect-[4/3]", isDrawingPlayer ? "cursor-crosshair" : "cursor-not-allowed")}
+                className={cn("bg-white rounded-lg shadow-inner w-full h-auto aspect-[4/3] max-h-full max-w-full", isDrawingPlayer ? "cursor-crosshair" : "cursor-not-allowed")}
             />
         );
     }
@@ -481,7 +481,7 @@ const ChatBox = ({ messages, onSendMessage, disabled }: { messages: Message[], o
     };
     
     return (
-        <Card className="flex-grow flex flex-col">
+        <Card className="flex-grow flex flex-col min-h-0">
             <CardHeader><CardTitle>Chat & Guesses</CardTitle></CardHeader>
             <CardContent className="flex-grow overflow-y-auto pr-2 space-y-2">
                 {messages.map((msg, i) => (
@@ -640,9 +640,14 @@ export default function DoodleDuelClient() {
   const [currentLineWidth, setCurrentLineWidth] = useState(BRUSH_SIZES[1]);
 
   const [selectedRounds, setSelectedRounds] = useState(ROUND_OPTIONS[2]);
-
+  
+  const [isCanvasFullscreen, setIsCanvasFullscreen] = useState(false);
+  const canvasAreaRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const aiCheckIntervalRef = useRef<NodeJS.Timeout>();
+  const tapCount = useRef(0);
+  const tapTimer = useRef<NodeJS.Timeout | null>(null);
+
   const { toast } = useToast();
 
   const me = gameState.players.find(p => p.id === socket?.id);
@@ -816,6 +821,24 @@ export default function DoodleDuelClient() {
   const handleUndo = () => socket?.emit("undo");
   const handleClear = () => socket?.emit("clearCanvas");
 
+  const toggleFullscreen = () => setIsCanvasFullscreen(prev => !prev);
+  
+  const handleCanvasAreaClick = (e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest('button')) return;
+
+    tapCount.current += 1;
+    if (tapTimer.current) clearTimeout(tapTimer.current);
+
+    if (tapCount.current === 3) {
+      toggleFullscreen();
+      tapCount.current = 0;
+    } else {
+      tapTimer.current = setTimeout(() => {
+        tapCount.current = 0;
+      }, 400); // 400ms window
+    }
+  };
+
   if (!name) {
     return <JoinScreen onJoin={handleJoin} />;
   }
@@ -856,16 +879,23 @@ export default function DoodleDuelClient() {
         </DialogContent>
       </Dialog>
 
-      <main className="flex flex-col md:flex-row h-screen bg-background p-4 gap-4 overflow-hidden">
-        <div className="w-full md:w-1/4 flex flex-col gap-4">
+      <main className="flex flex-col md:flex-row h-dvh bg-background p-2 md:p-4 gap-4">
+        <div className={cn("w-full md:w-1/4 flex flex-col gap-4 min-h-0", isCanvasFullscreen && "hidden")}>
           <RoomInfo roomId={roomId} toast={toast} />
           <Scoreboard players={gameState.players} currentPlayerId={socket?.id ?? null} />
           <ChatBox messages={gameState.messages} onSendMessage={handleGuess} disabled={isDrawer || (me?.hasGuessed ?? false) || me?.disconnected === true} />
         </div>
-        <div className="w-full md:w-3/4 flex flex-col items-center justify-center gap-2">
+        <div 
+          ref={canvasAreaRef}
+          onClick={handleCanvasAreaClick}
+          className={cn(
+            "w-full md:w-3/4 flex flex-col items-center justify-start gap-2",
+            isCanvasFullscreen && "fixed inset-0 z-50 bg-background p-4 flex"
+          )}
+        >
             {!gameState.isRoundActive && roomId ? (
                 gameState.currentRound === 0 ? (
-                    <Card className="p-8 text-center">
+                    <Card className="p-8 text-center m-auto">
                         <CardTitle className="text-2xl mb-2">Lobby</CardTitle>
                         <CardContent className="space-y-4">
                             <p className="text-muted-foreground">{activePlayers.length} / 8 players</p>
@@ -890,7 +920,7 @@ export default function DoodleDuelClient() {
                         </CardContent>
                     </Card>
                 ) : (
-                    <Card className="p-8 text-center animate-pulse">
+                    <Card className="p-8 text-center m-auto animate-pulse">
                         <CardTitle className="text-2xl mb-2">Next round is starting!</CardTitle>
                         <CardContent className="space-y-4">
                             <p className="text-lg text-muted-foreground">
@@ -904,20 +934,22 @@ export default function DoodleDuelClient() {
                 )
             ) : (
                 <>
-                    <div className="w-full max-w-2xl">
+                    <div className={cn("w-full max-w-2xl", isCanvasFullscreen && "pt-4")}>
                          <div className="text-center text-lg font-semibold text-muted-foreground mb-1">
                             {gameState.currentRound > 0 && `Round ${gameState.currentRound} / ${gameState.gameSettings.totalRounds}`}
                         </div>
                         <Timer time={gameState.roundTimer} />
                         <WordDisplay maskedWord={gameState.currentWord} isDrawing={isDrawer} fullWord={fullWord} />
                     </div>
-                    <DrawingCanvas 
-                        ref={canvasRef} 
-                        onDrawStart={handleStartPath}
-                        onDrawing={handleDrawPath} 
-                        isDrawingPlayer={isDrawer}
-                        drawingHistory={gameState.drawingHistory}
-                    />
+                    <div className="relative w-full flex-1 flex items-center justify-center min-h-0">
+                        <DrawingCanvas 
+                            ref={canvasRef} 
+                            onDrawStart={handleStartPath}
+                            onDrawing={handleDrawPath} 
+                            isDrawingPlayer={isDrawer}
+                            drawingHistory={gameState.drawingHistory}
+                        />
+                    </div>
                     {isDrawer && <Toolbar color={currentColor} setColor={setCurrentColor} lineWidth={currentLineWidth} setLineWidth={setCurrentLineWidth} onUndo={handleUndo} onClear={handleClear} disabled={!isDrawer} />}
                 </>
             )}
