@@ -1,3 +1,4 @@
+
 "use client";
 
 import { analyzeDrawingHistory } from "@/ai/flows/skip-vote-trigger";
@@ -26,6 +27,7 @@ import React, {
   useState,
 } from "react";
 import { Toaster } from "./ui/toaster";
+import { io, Socket } from "socket.io-client";
 
 // --- TYPES ---
 type Player = {
@@ -49,28 +51,24 @@ type DrawingPath = {
   path: DrawingPoint[];
 };
 
+type GameState = {
+  players: Player[];
+  messages: Message[];
+  drawingHistory: DrawingPath[];
+  isRoundActive: boolean;
+  currentWord: string; // This will be the masked word
+  roundTimer: number;
+  drawerId: string | null;
+};
+
 // --- CONSTANTS ---
 const ROUND_TIME = 90; // in seconds
 const AI_CHECK_INTERVAL = 15000; // 15 seconds
-const HINT_REVEAL_START_TIME = ROUND_TIME / 2;
-const HINT_REVEAL_INTERVAL = 10000; // 10 seconds
 
 const DRAWING_COLORS = [
   "#000000", "#ef4444", "#fb923c", "#facc15", "#4ade80", "#22d3ee", "#3b82f6", "#a78bfa", "#f472b6", "#ffffff",
 ];
 const BRUSH_SIZES = [2, 5, 10, 20];
-
-// --- MOCK DATA & HELPERS ---
-const initialPlayers: Player[] = [
-  { id: "1", name: "Player 1", score: 0, isDrawing: true, hasGuessed: false },
-  { id: "2", name: "Player 2", score: 0, isDrawing: false, hasGuessed: false },
-  { id: "3", name: "Player 3", score: 0, isDrawing: false, hasGuessed: false },
-  { id: "4", name: "You", score: 0, isDrawing: false, hasGuessed: false },
-];
-
-const getMaskedWord = (word: string, revealedIndices: number[]) => {
-  return word.split("").map((letter, index) => (revealedIndices.includes(index) || letter === ' ' ? letter : "_")).join(" ");
-};
 
 // --- SUB-COMPONENTS ---
 
@@ -124,7 +122,7 @@ const Scoreboard = ({ players, currentPlayerId }: { players: Player[]; currentPl
           <li key={p.id} className={cn("flex items-center justify-between p-2 rounded-lg transition-all", p.id === currentPlayerId && "bg-accent/50")}>
             <div className="flex items-center gap-3">
               <Avatar>
-                <AvatarImage src={`https://placehold.co/40x40.png?text=${p.name.charAt(0)}`} />
+                <AvatarImage src={`https://placehold.co/40x40.png?text=${p.name.charAt(0)}`} data-ai-hint="avatar person" />
                 <AvatarFallback>{p.name.charAt(0)}</AvatarFallback>
               </Avatar>
               <span className="font-medium">{p.name}</span>
@@ -141,43 +139,71 @@ const Scoreboard = ({ players, currentPlayerId }: { players: Player[]; currentPl
   </Card>
 );
 
-const Timer = ({ time, maxTime }: { time: number; maxTime: number }) => (
+const Timer = ({ time }: { time: number }) => (
   <div className="w-full">
     <div className="flex justify-center items-center gap-2 mb-2 text-xl font-bold text-primary">
       <Clock className="w-6 h-6" />
       <span>{time}</span>
     </div>
-    <Progress value={(time / maxTime) * 100} className="h-2" />
+    <Progress value={(time / ROUND_TIME) * 100} className="h-2" />
   </div>
 );
 
-const WordDisplay = ({ word, revealedIndices, isDrawing, fullWord }: { word: string; revealedIndices: number[]; isDrawing: boolean; fullWord: string; }) => (
+const WordDisplay = ({ maskedWord, isDrawing, fullWord }: { maskedWord: string; isDrawing: boolean; fullWord: string; }) => (
   <div className="text-center py-4">
     <p className="text-muted-foreground text-sm font-medium">
       {isDrawing ? "You are drawing:" : "Guess the word!"}
     </p>
     <p className="text-4xl font-bold tracking-widest font-headline text-primary transition-all duration-300">
-      {isDrawing ? fullWord : getMaskedWord(word, revealedIndices)}
+      {isDrawing ? fullWord : maskedWord}
     </p>
   </div>
 );
 
-const DrawingCanvas = React.forwardRef<HTMLCanvasElement, { onDraw: (path: DrawingPath) => void, onUndo: (path: DrawingPath) => void, onClear: () => void, color: string, lineWidth: number, isDrawingPlayer: boolean }>(
-    ({ onDraw, onUndo, onClear, color, lineWidth, isDrawingPlayer }, ref) => {
+const DrawingCanvas = React.forwardRef<HTMLCanvasElement, { onDrawEnd: (path: DrawingPath) => void, isDrawingPlayer: boolean, drawingHistory: DrawingPath[] }>(
+    ({ onDrawEnd, isDrawingPlayer, drawingHistory }, ref) => {
         const isDrawing = useRef(false);
         const currentPath = useRef<DrawingPoint[]>([]);
+        const colorRef = useRef("#000000");
+        const lineWidthRef = useRef(5);
+
+        // This effect is for drawing paths from other players
+        useEffect(() => {
+            const canvas = ref && 'current' in ref && ref.current;
+            if (!canvas) return;
+            const ctx = canvas.getContext("2d");
+            if (!ctx) return;
+            
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            drawingHistory.forEach(({ path, color, lineWidth }) => {
+                ctx.strokeStyle = color;
+                ctx.lineWidth = lineWidth;
+                ctx.lineCap = "round";
+                ctx.lineJoin = "round";
+                ctx.beginPath();
+                path.forEach((point, index) => {
+                    if (index === 0) ctx.moveTo(point.x, point.y);
+                    else ctx.lineTo(point.x, point.y);
+                });
+                ctx.stroke();
+            });
+        }, [drawingHistory, ref]);
 
         const getCoords = (e: MouseEvent | TouchEvent): DrawingPoint | null => {
             if (!ref || typeof ref === 'function' || !ref.current) return null;
             const canvas = ref.current;
             const rect = canvas.getBoundingClientRect();
+            let clientX, clientY;
             if (e instanceof MouseEvent) {
-                return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+                clientX = e.clientX;
+                clientY = e.clientY;
+            } else if (e.touches && e.touches.length > 0) {
+                clientX = e.touches[0].clientX;
+                clientY = e.touches[0].clientY;
+            } else {
+                return null;
             }
-            if (e.touches && e.touches.length > 0) {
-                return { x: e.touches[0].clientX - rect.left, y: e.touches[0].clientY - rect.top };
-            }
-            return null;
+            return { x: clientX - rect.left, y: clientY - rect.top };
         };
         
         const startDrawing = useCallback((e: React.MouseEvent | React.TouchEvent) => {
@@ -192,16 +218,45 @@ const DrawingCanvas = React.forwardRef<HTMLCanvasElement, { onDraw: (path: Drawi
         const draw = useCallback((e: React.MouseEvent | React.TouchEvent) => {
             if (!isDrawing.current || !isDrawingPlayer) return;
             const coords = getCoords(e.nativeEvent);
-            if (coords) {
+             if (coords && ref && 'current' in ref && ref.current) {
+                const canvas = ref.current;
+                const ctx = canvas.getContext('2d');
+                if(!ctx) return;
+
                 currentPath.current.push(coords);
-                const newPath: DrawingPath = { color, lineWidth, path: [...currentPath.current] };
-                onDraw(newPath);
+                
+                // Draw locally for responsiveness
+                ctx.strokeStyle = colorRef.current;
+                ctx.lineWidth = lineWidthRef.current;
+                ctx.lineCap = "round";
+                ctx.lineJoin = "round";
+                ctx.beginPath();
+                ctx.moveTo(currentPath.current[currentPath.current.length - 2]?.x, currentPath.current[currentPath.current.length - 2]?.y);
+                ctx.lineTo(coords.x, coords.y);
+                ctx.stroke();
             }
-        }, [isDrawingPlayer, color, lineWidth, onDraw]);
+        }, [isDrawingPlayer, ref]);
 
         const stopDrawing = useCallback(() => {
+            if (isDrawing.current && isDrawingPlayer && currentPath.current.length > 0) {
+                 onDrawEnd({
+                    color: colorRef.current,
+                    lineWidth: lineWidthRef.current,
+                    path: currentPath.current,
+                });
+            }
             isDrawing.current = false;
-        }, []);
+            currentPath.current = [];
+        }, [isDrawingPlayer, onDrawEnd]);
+        
+        // Method for toolbar to update canvas properties
+        if (ref && 'current' in ref && ref.current) {
+            (ref.current as any).updateBrush = (color: string, lineWidth: number) => {
+                colorRef.current = color;
+                lineWidthRef.current = lineWidth;
+            };
+        }
+
 
         return (
             <canvas
@@ -306,89 +361,122 @@ const ChatBox = ({ messages, onSendMessage, disabled }: { messages: Message[], o
 
 // --- MAIN COMPONENT ---
 export default function DoodleDuelClient() {
-  const [currentPlayer, setCurrentPlayer] = useState<Player | null>(null);
-  const [players, setPlayers] = useState<Player[]>(initialPlayers);
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [wordList, setWordList] = useState<string[]>([]);
-  const [currentWord, setCurrentWord] = useState("");
-  const [revealedIndices, setRevealedIndices] = useState<number[]>([]);
-  const [timer, setTimer] = useState(ROUND_TIME);
-  const [isRoundActive, setIsRoundActive] = useState(false);
+  const [socket, setSocket] = useState<Socket | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [name, setName] = useState<string | null>(null);
   
-  const [drawingHistory, setDrawingHistory] = useState<DrawingPath[]>([]);
+  const [gameState, setGameState] = useState<GameState>({
+      players: [],
+      messages: [],
+      drawingHistory: [],
+      isRoundActive: false,
+      currentWord: "",
+      roundTimer: ROUND_TIME,
+      drawerId: null
+  });
+  const [fullWord, setFullWord] = useState("");
+
   const [currentColor, setCurrentColor] = useState(DRAWING_COLORS[0]);
   const [currentLineWidth, setCurrentLineWidth] = useState(BRUSH_SIZES[1]);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const aiCheckIntervalRef = useRef<NodeJS.Timeout>();
-  const hintIntervalRef = useRef<NodeJS.Timeout>();
   const { toast } = useToast();
 
-  const isDrawer = currentPlayer?.isDrawing ?? false;
+  const me = gameState.players.find(p => p.id === socket?.id);
+  const isDrawer = me?.isDrawing ?? false;
 
   // --- Effects ---
 
-  // Initialize: Load words and check session
+  // Initialize Socket.IO
   useEffect(() => {
-    fetch('/words.txt')
-      .then(res => res.text())
-      .then(text => setWordList(text.split('\n').filter(Boolean)));
-      
-    const session = localStorage.getItem('doodle-duel-session');
-    if (session) {
-        try {
-            const { id, name, score } = JSON.parse(session);
-            handleJoin(name, id, score);
-        } catch (e) {
-            localStorage.removeItem('doodle-duel-session');
-        }
-    }
+    const newSocket = io();
+    setSocket(newSocket);
+
+    return () => {
+        newSocket.disconnect();
+    };
   }, []);
 
-  // Redraw canvas when history changes
+  // Socket event listeners
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
+    if (!socket) return;
     
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    drawingHistory.forEach(({ path, color, lineWidth }) => {
-      ctx.strokeStyle = color;
-      ctx.lineWidth = lineWidth;
-      ctx.lineCap = "round";
-      ctx.lineJoin = "round";
-      ctx.beginPath();
-      path.forEach((point, index) => {
-        if (index === 0) ctx.moveTo(point.x, point.y);
-        else ctx.lineTo(point.x, point.y);
-      });
-      ctx.stroke();
+    socket.on("connect", () => {
+        console.log("Connected to server!");
+        const storedSessionId = localStorage.getItem('doodle-duel-session');
+        if (storedSessionId && name) {
+            socket.emit("join", name, storedSessionId);
+        }
     });
-  }, [drawingHistory]);
+
+    socket.on("session", (newSessionId: string) => {
+        setSessionId(newSessionId);
+        localStorage.setItem('doodle-duel-session', newSessionId);
+    });
+
+    socket.on("gameStateUpdate", (newGameState: GameState) => {
+        setGameState(newGameState);
+    });
+
+    socket.on("timerUpdate", (time: number) => {
+        setGameState(prev => ({...prev, roundTimer: time}));
+    });
+
+    socket.on("drawingUpdate", (history: DrawingPath[]) => {
+        setGameState(prev => ({...prev, drawingHistory: history}));
+    });
+    
+    socket.on("drawerWord", (word: string) => {
+        setFullWord(word);
+    });
+
+    socket.on("roundEnd", ({ word }: { word: string }) => {
+        const player = gameState.players.find(p => p.id === socket.id);
+        const wasCorrect = player?.hasGuessed;
+
+        toast({
+            title: wasCorrect ? "Round Over!" : "Time's Up!",
+            description: `The word was: ${word}`,
+            duration: 5000,
+            icon: wasCorrect ? <PartyPopper className="text-green-500" /> : <Clock />,
+        });
+    });
+
+    socket.on("error", (message: string) => {
+        toast({ title: "Error", description: message, variant: "destructive" });
+    });
+
+    return () => {
+        socket.off("connect");
+        socket.off("session");
+        socket.off("gameStateUpdate");
+        socket.off("timerUpdate");
+        socket.off("drawingUpdate");
+        socket.off("drawerWord");
+        socket.off("roundEnd");
+        socket.off("error");
+    };
+
+  }, [socket, name, toast, gameState.players]);
   
-  // Game Timer and Hint Logic
+  // Update canvas brush
   useEffect(() => {
-    if (isRoundActive) {
-      if (timer > 0) {
-        const roundTimer = setTimeout(() => setTimer(timer - 1), 1000);
-        return () => clearTimeout(roundTimer);
-      } else {
-        endRound(false); // Time's up
-      }
+    if (canvasRef.current && (canvasRef.current as any).updateBrush) {
+        (canvasRef.current as any).updateBrush(currentColor, currentLineWidth);
     }
-  }, [isRoundActive, timer]);
+  }, [currentColor, currentLineWidth]);
 
   // AI Drawing Analysis
   useEffect(() => {
-    if (isRoundActive && !isDrawer) {
+    if (gameState.isRoundActive && !isDrawer) {
       aiCheckIntervalRef.current = setInterval(async () => {
-        const historyString = JSON.stringify(drawingHistory.flatMap(p => p.path));
-        if (historyString.length > 50 && currentWord) {
+        const historyString = JSON.stringify(gameState.drawingHistory.flatMap(p => p.path));
+        if (historyString.length > 50 && fullWord) { // Using fullWord from drawer as target
             try {
                 const result = await analyzeDrawingHistory({
                     drawingHistory: historyString,
-                    targetWord: currentWord,
+                    targetWord: fullWord, // This is an issue: guessers don't know the word.
                 });
                 if (result.shouldInitiateSkipVote) {
                     toast({
@@ -412,121 +500,37 @@ export default function DoodleDuelClient() {
       }, AI_CHECK_INTERVAL);
     }
     return () => clearInterval(aiCheckIntervalRef.current);
-  }, [isRoundActive, isDrawer, drawingHistory, currentWord, toast]);
-
-  // Hint revealing logic
-  useEffect(() => {
-    if(isRoundActive && timer < HINT_REVEAL_START_TIME) {
-        if (!hintIntervalRef.current) {
-            hintIntervalRef.current = setInterval(() => {
-                revealHint();
-            }, HINT_REVEAL_INTERVAL)
-        }
-    }
-    return () => clearInterval(hintIntervalRef.current);
-  }, [isRoundActive, timer, currentWord]);
-
+  }, [gameState.isRoundActive, isDrawer, gameState.drawingHistory, fullWord, toast]);
 
   // --- Callbacks & Handlers ---
 
-  const handleJoin = (name: string, id?: string, score?: number) => {
-    const newPlayerId = id || crypto.randomUUID();
-    const existingPlayerIndex = players.findIndex(p => p.name.toLowerCase() === name.toLowerCase());
-    
-    let player: Player;
-    if (existingPlayerIndex !== -1) {
-        player = players[existingPlayerIndex];
-        player.id = newPlayerId; // Update ID in case of rejoin
-    } else {
-        player = { id: newPlayerId, name, score: score || 0, isDrawing: false, hasGuessed: false };
-        setPlayers(prev => [...prev, player]);
-    }
-    setCurrentPlayer(player);
-    localStorage.setItem('doodle-duel-session', JSON.stringify({ id: newPlayerId, name, score: player.score }));
+  const handleJoin = (name: string) => {
+    setName(name);
+    const storedSessionId = localStorage.getItem('doodle-duel-session');
+    socket?.emit("join", name, storedSessionId);
   };
 
-  const startRound = () => {
-    // In a real app, drawer would be rotated. Here we just use the default.
-    const drawer = players.find(p => p.isDrawing);
-    if (!drawer || wordList.length === 0) return;
-
-    setDrawingHistory([]);
-    setRevealedIndices([]);
-    setMessages([]);
-    setPlayers(players.map(p => ({ ...p, hasGuessed: false })));
-    setCurrentWord(wordList[Math.floor(Math.random() * wordList.length)]);
-    setTimer(ROUND_TIME);
-    setIsRoundActive(true);
-    hintIntervalRef.current = undefined;
+  const handleStartGame = () => {
+    socket?.emit("startGame");
   };
   
-  const endRound = (wordGuessed: boolean) => {
-    setIsRoundActive(false);
-    clearInterval(aiCheckIntervalRef.current);
-    clearInterval(hintIntervalRef.current);
-    
-    toast({
-        title: wordGuessed ? "Round Over!" : "Time's Up!",
-        description: `The word was: ${currentWord}`,
-        duration: 5000,
-        action: <Button onClick={startRound}>Next Round</Button>
-    });
-  };
-
   const handleGuess = (guess: string) => {
-    const isCorrect = guess.toLowerCase() === currentWord.toLowerCase();
-    
-    if (isCorrect && currentPlayer && !currentPlayer.hasGuessed) {
-        const guesserPoints = Math.max(10, Math.floor(timer * 0.5));
-        const drawerPoints = 20;
-
-        setPlayers(players.map(p => {
-            if (p.id === currentPlayer.id) return { ...p, score: p.score + guesserPoints, hasGuessed: true };
-            if (p.isDrawing) return { ...p, score: p.score + drawerPoints };
-            return p;
-        }));
-        setCurrentPlayer(p => p ? { ...p, score: p.score + guesserPoints, hasGuessed: true } : p);
-
-        toast({
-            title: "Correct!",
-            description: `You earned ${guesserPoints} points!`,
-            icon: <PartyPopper className="text-green-500" />
-        });
-    }
-
-    setMessages(prev => [...prev, { playerName: currentPlayer?.name || "??", text: guess, isCorrect }]);
-
-    if (isCorrect && players.filter(p => !p.isDrawing).every(p => p.hasGuessed || p.id === currentPlayer?.id)) {
-        endRound(true);
-    }
+    socket?.emit("sendMessage", guess);
   };
 
-  const revealHint = () => {
-    if (!currentWord) return;
-    const unrevealed = currentWord.split('').map((_, i) => i).filter(i => !revealedIndices.includes(i) && currentWord[i] !== ' ');
-    if (unrevealed.length > 2) { // Keep at least 2 letters hidden
-        const randomIndex = unrevealed[Math.floor(Math.random() * unrevealed.length)];
-        setRevealedIndices(prev => [...prev, randomIndex]);
-    }
-  };
-
-  const handleDraw = (newPath: DrawingPath) => {
-    setDrawingHistory(prev => [...prev.slice(0, prev.length -1), newPath]);
-  };
-  
-  const handleStartDraw = () => {
-     setDrawingHistory(prev => [...prev, {color: currentColor, lineWidth: currentLineWidth, path: []}]);
+  const handleDrawEnd = (path: DrawingPath) => {
+    socket?.emit("draw", path);
   };
 
   const handleUndo = () => {
-    setDrawingHistory(prev => prev.slice(0, -1));
+    socket?.emit("undo");
   };
 
   const handleClear = () => {
-    setDrawingHistory([]);
+    socket?.emit("clearCanvas");
   };
 
-  if (!currentPlayer) {
+  if (!name || !socket || !me) {
     return <JoinScreen onJoin={handleJoin} />;
   }
 
@@ -534,22 +538,27 @@ export default function DoodleDuelClient() {
     <>
       <main className="flex flex-col md:flex-row h-screen bg-background p-4 gap-4 overflow-hidden">
         <div className="w-full md:w-1/4 flex flex-col gap-4">
-          <Scoreboard players={players} currentPlayerId={currentPlayer.id} />
-          <ChatBox messages={messages} onSendMessage={handleGuess} disabled={isDrawer} />
+          <Scoreboard players={gameState.players} currentPlayerId={socket.id} />
+          <ChatBox messages={gameState.messages} onSendMessage={handleGuess} disabled={isDrawer || me?.hasGuessed} />
         </div>
         <div className="w-full md:w-3/4 flex flex-col items-center justify-center gap-2">
-            {!isRoundActive ? (
+            {!gameState.isRoundActive ? (
                 <Card className="p-8 text-center">
-                    <CardTitle className="text-2xl mb-4">Waiting for next round...</CardTitle>
-                    <Button onClick={startRound} size="lg">Start Game</Button>
+                    <CardTitle className="text-2xl mb-4">Waiting for the drawer to start...</CardTitle>
+                    {isDrawer && <Button onClick={handleStartGame} size="lg">Start Round</Button>}
                 </Card>
             ) : (
                 <>
                     <div className="w-full max-w-2xl">
-                        <Timer time={timer} maxTime={ROUND_TIME} />
-                        <WordDisplay word={currentWord} revealedIndices={revealedIndices} isDrawing={isDrawer} fullWord={currentWord} />
+                        <Timer time={gameState.roundTimer} />
+                        <WordDisplay maskedWord={gameState.currentWord} isDrawing={isDrawer} fullWord={fullWord} />
                     </div>
-                    <DrawingCanvas ref={canvasRef} onDraw={handleDraw} onUndo={handleUndo} onClear={handleClear} color={currentColor} lineWidth={currentLineWidth} isDrawingPlayer={isDrawer} />
+                    <DrawingCanvas 
+                        ref={canvasRef} 
+                        onDrawEnd={handleDrawEnd} 
+                        isDrawingPlayer={isDrawer}
+                        drawingHistory={gameState.drawingHistory}
+                    />
                     {isDrawer && <Toolbar color={currentColor} setColor={setCurrentColor} lineWidth={currentLineWidth} setLineWidth={setCurrentLineWidth} onUndo={handleUndo} onClear={handleClear} disabled={!isDrawer} />}
                 </>
             )}
@@ -559,3 +568,4 @@ export default function DoodleDuelClient() {
     </>
   );
 }
+
