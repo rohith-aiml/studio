@@ -1,9 +1,14 @@
 import type {Metadata} from 'next';
 import './globals.css';
 
+const favicon = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='hsl(210 75% 50%)' /%3E%3Cpath d='M9 23 L23 9' stroke='white' stroke-width='3' stroke-linecap='round' /%3E%3Cpath d='M9 9 L23 23' stroke='white' stroke-width='3' stroke-linecap='round' /%3E%3C/svg%3E";
+
 export const metadata: Metadata = {
   title: 'Doodle Duel',
   description: 'A real-time multiplayer drawing and guessing game.',
+  icons: {
+    icon: favicon,
+  },
 };
 
 export default function RootLayout({
