@@ -60,6 +60,7 @@ type RoomState = {
     gameState: GameState;
     roundInterval: NodeJS.Timeout | null;
     hintInterval: NodeJS.Timeout | null;
+    wordChoiceTimeout: NodeJS.Timeout | null;
 }
 
 const levenshteinDistance = (a: string, b: string): number => {
@@ -148,6 +149,15 @@ app.prepare().then(() => {
   const startRound = (roomId: string) => {
     const room = gameRooms.get(roomId);
     if (!room) return;
+
+    // Clear all previous timers for safety
+    if (room.roundInterval) clearInterval(room.roundInterval);
+    if (room.hintInterval) clearInterval(room.hintInterval);
+    if (room.wordChoiceTimeout) clearTimeout(room.wordChoiceTimeout);
+    room.roundInterval = null;
+    room.hintInterval = null;
+    room.wordChoiceTimeout = null;
+
     const activePlayers = room.gameState.players.filter(p => !p.disconnected);
     if (activePlayers.length < 2) {
       io.to(roomId).emit("error", "Not enough active players to start a round.");
@@ -172,10 +182,6 @@ app.prepare().then(() => {
     if (room.gameState.currentRound > room.gameState.gameSettings.totalRounds) {
         room.gameState.isGameOver = true;
         room.gameState.isRoundActive = false;
-        if (room.roundInterval) clearInterval(room.roundInterval);
-        if (room.hintInterval) clearInterval(room.hintInterval);
-        room.roundInterval = null;
-        room.hintInterval = null;
         room.gameState.messages.push({ playerName: "System", text: `Game Over! Check out the final scores!`, isCorrect: false });
         broadcastGameState(roomId);
         return;
@@ -183,9 +189,6 @@ app.prepare().then(() => {
     
     const newDrawer = activePlayers[nextDrawerIndex];
     if (!newDrawer) return;
-
-    if (room.roundInterval) clearInterval(room.roundInterval);
-    if (room.hintInterval) clearInterval(room.hintInterval);
 
     room.gameState.drawingHistory = [];
     room.gameState.messages = [{ playerName: "System", text: `${newDrawer.name} is choosing a word...`, isCorrect: false }];
@@ -210,6 +213,17 @@ app.prepare().then(() => {
 
     broadcastGameState(roomId);
     io.to(newDrawer.id).emit("promptWordChoice", wordChoices);
+    
+    // Set a timeout for word choice
+    room.wordChoiceTimeout = setTimeout(() => {
+        const currentRoom = gameRooms.get(roomId);
+        // Check if round is still in the "choosing" phase for this drawer
+        if (currentRoom && !currentRoom.gameState.isRoundActive && currentRoom.gameState.drawerId === newDrawer.id) {
+            currentRoom.gameState.messages.push({ playerName: "System", text: `${newDrawer.name} took too long to choose a word. Skipping turn.`, isCorrect: false });
+            broadcastGameState(roomId);
+            startRound(roomId); // This will move to the next player
+        }
+    }, 15000); // 15 seconds
   };
   
   const gameTick = (roomId: string) => {
@@ -247,16 +261,20 @@ app.prepare().then(() => {
 
     if (room.roundInterval) clearInterval(room.roundInterval);
     if (room.hintInterval) clearInterval(room.hintInterval);
+    if (room.wordChoiceTimeout) clearTimeout(room.wordChoiceTimeout);
     room.roundInterval = null;
     room.hintInterval = null;
+    room.wordChoiceTimeout = null;
 
-    if (!room.gameState.isRoundActive) return;
-
-    room.gameState.isRoundActive = false;
-    const message = wordGuessed ? "All players guessed the word!" : "Time's up!";
-    room.gameState.messages.push({ playerName: "System", text: `${message} The word was: ${room.gameState.currentWord}`, isCorrect: false });
+    if (!room.gameState.isRoundActive && !wordGuessed) {
+         // This handles when the round ends before it began (e.g., drawer disconnects)
+    } else {
+        const message = wordGuessed ? "All players guessed the word!" : "Time's up!";
+        room.gameState.messages.push({ playerName: "System", text: `${message} The word was: ${room.gameState.currentWord}`, isCorrect: false });
+        io.to(roomId).emit("roundEnd", { word: room.gameState.currentWord });
+    }
     
-    io.to(roomId).emit("roundEnd", { word: room.gameState.currentWord });
+    room.gameState.isRoundActive = false;
     broadcastGameState(roomId);
 
     setTimeout(() => startRound(roomId), 5000);
@@ -289,7 +307,7 @@ app.prepare().then(() => {
             currentRound: 0,
         };
 
-        gameRooms.set(roomId, { gameState: newGameState, roundInterval: null, hintInterval: null });
+        gameRooms.set(roomId, { gameState: newGameState, roundInterval: null, hintInterval: null, wordChoiceTimeout: null });
         socket.emit("roomCreated", roomId);
         broadcastGameState(roomId);
     });
@@ -395,6 +413,12 @@ app.prepare().then(() => {
         if (!currentRoomId) return;
         const room = gameRooms.get(currentRoomId);
         if (!room || socket.id !== room.gameState.drawerId || room.gameState.isRoundActive) return;
+
+        // Clear the word choice timeout
+        if (room.wordChoiceTimeout) {
+            clearTimeout(room.wordChoiceTimeout);
+            room.wordChoiceTimeout = null;
+        }
 
         const drawer = room.gameState.players.find(p => p.id === socket.id);
         if (!drawer) return;

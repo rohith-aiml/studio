@@ -217,17 +217,15 @@ const RoomInfo = ({ roomId, toast }: { roomId: string | null; toast: any }) => {
 
     return (
         <Card className="flex-shrink-0">
-            <CardHeader className="p-3">
-                <CardTitle className="text-base">Invite Players</CardTitle>
-            </CardHeader>
-            <CardContent className="p-3 pt-0">
-                <p className="text-xs text-muted-foreground mb-2">Room <span className="font-bold text-primary">{roomId}</span></p>
-                <div className="flex gap-2">
-                    <Input value={inviteLink} readOnly className="text-sm h-9" />
-                    <Button onClick={copyToClipboard} size="icon" variant="outline" className="h-9 w-9">
-                        <ClipboardCopy className="w-4 h-4" />
-                    </Button>
+             <CardContent className="p-3 flex items-center justify-between">
+                <div className="text-sm">
+                    <span className="text-muted-foreground">Room </span>
+                    <span className="font-bold text-primary">{roomId}</span>
                 </div>
+                <Button onClick={copyToClipboard} size="sm" variant="outline">
+                    <ClipboardCopy className="w-4 h-4 mr-2" />
+                    Copy Invite
+                </Button>
             </CardContent>
         </Card>
     );
@@ -293,17 +291,17 @@ const WordDisplay = ({ maskedWord, isDrawing, fullWord }: { maskedWord: string; 
     }, [fullWord, isDrawing]);
     
     return (
-      <div className="text-center py-2 md:py-4">
-        <p className="text-muted-foreground text-sm font-medium">
+      <div className="text-center py-1 md:py-2">
+        <p className="text-muted-foreground text-xs md:text-sm font-medium">
           {isDrawing ? "You are drawing:" : "Guess the word!"}
         </p>
         <div className="flex items-center justify-center gap-2">
-            <p className="text-3xl md:text-4xl font-bold tracking-widest font-headline text-primary transition-all duration-300">
+            <p className="text-2xl md:text-4xl font-bold tracking-widest font-headline text-primary transition-all duration-300">
               {isDrawing ? (isWordVisible ? fullWord : '*'.repeat(fullWord.length).split('').join(' ')) : maskedWord}
             </p>
             {isDrawing && fullWord && (
-                <Button onClick={() => setIsWordVisible(!isWordVisible)} size="icon" variant="ghost">
-                    {isWordVisible ? <EyeOff className="w-6 h-6" /> : <Eye className="w-6 h-6" />}
+                <Button onClick={() => setIsWordVisible(!isWordVisible)} size="icon" variant="ghost" className="h-8 w-8 md:h-auto md:w-auto">
+                    {isWordVisible ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                     <span className="sr-only">{isWordVisible ? 'Hide word' : 'Show word'}</span>
                 </Button>
             )}
@@ -330,7 +328,6 @@ const DrawingCanvas = React.forwardRef<HTMLCanvasElement, {
             const ctx = canvas.getContext("2d");
             if (!ctx) return;
             
-            // Handle DPI scaling for sharp drawings
             const dpr = window.devicePixelRatio || 1;
             const rect = canvas.getBoundingClientRect();
             if (canvas.width !== rect.width * dpr || canvas.height !== rect.height * dpr) {
@@ -448,7 +445,7 @@ const DrawingCanvas = React.forwardRef<HTMLCanvasElement, {
                 onTouchStart={startDrawing}
                 onTouchMove={draw}
                 onTouchEnd={stopDrawing}
-                className={cn("bg-white rounded-lg shadow-inner w-full h-full touch-none", isDrawingPlayer ? "cursor-crosshair" : "cursor-not-allowed")}
+                className={cn("bg-white rounded-lg shadow-inner w-full h-full", isDrawingPlayer ? "cursor-crosshair touch-none" : "cursor-not-allowed")}
             />
         );
     }
@@ -702,6 +699,7 @@ export default function DoodleDuelClient() {
   const aiCheckIntervalRef = useRef<NodeJS.Timeout>();
   const tapCount = useRef(0);
   const tapTimer = useRef<NodeJS.Timeout | null>(null);
+  const notificationSoundRef = useRef<HTMLAudioElement>(null);
 
   const { toast } = useToast();
 
@@ -758,6 +756,7 @@ export default function DoodleDuelClient() {
         });
     });
     socket.on("aiSuggestion", (result: AnalyzeDrawingHistoryOutput) => {
+        notificationSoundRef.current?.play().catch(e => console.error("Error playing sound:", e));
         toast({
             title: "AI Suggestion",
             description: (<div className="flex items-center gap-2"><Vote /><div><p>{result.reason}</p><Button size="sm" className="mt-2">Vote to Skip</Button></div></div>),
@@ -765,6 +764,7 @@ export default function DoodleDuelClient() {
         });
     });
     socket.on("closeGuess", (message: string) => {
+        notificationSoundRef.current?.play().catch(e => console.error("Error playing sound:", e));
         toast({
             title: "Hint",
             description: (<div className="flex items-center gap-2"><Sparkles className="text-yellow-400" /><span>{message}</span></div>),
@@ -885,10 +885,10 @@ export default function DoodleDuelClient() {
       </Dialog>
 
       <main className={cn(
-          "flex flex-col md:flex-row h-screen max-h-screen overflow-hidden bg-background p-2 md:p-4 gap-4",
+          "flex flex-col md:flex-row h-dvh max-h-dvh overflow-hidden bg-background p-2 md:p-4 gap-4",
           isCanvasFullscreen && "fixed inset-0 z-50 p-4"
         )}>
-        <div ref={canvasAreaRef} onClick={handleCanvasAreaClick} className="flex flex-col flex-1 min-h-0 items-center justify-center gap-2">
+        <div ref={canvasAreaRef} onClick={handleCanvasAreaClick} className={cn("flex flex-col flex-1 min-h-0 items-center justify-center gap-2", isDrawer && "touch-none")}>
             {isCanvasFullscreen && (
               <Button onClick={toggleFullscreen} variant="ghost" size="icon" className="absolute top-4 right-4 z-50 bg-background/50 hover:bg-background">
                 <X />
@@ -929,7 +929,7 @@ export default function DoodleDuelClient() {
             ) : (
                 <>
                     <div className="w-full max-w-2xl flex-shrink-0">
-                        {gameState.currentRound > 0 && <div className="text-center text-lg font-semibold text-muted-foreground mb-1">{`Round ${gameState.currentRound} / ${gameState.gameSettings.totalRounds}`}</div>}
+                        {gameState.currentRound > 0 && <div className="text-center text-sm font-semibold text-muted-foreground mb-1">{`Round ${gameState.currentRound} / ${gameState.gameSettings.totalRounds}`}</div>}
                         <Timer time={gameState.roundTimer} />
                         <WordDisplay maskedWord={gameState.currentWord} isDrawing={isDrawer} fullWord={fullWord} />
                     </div>
@@ -945,13 +945,11 @@ export default function DoodleDuelClient() {
         <div className={cn("w-full md:w-[320px] lg:w-[350px] flex flex-col gap-4 min-h-0", isCanvasFullscreen ? "hidden" : "flex")}>
           <RoomInfo roomId={roomId} toast={toast} />
           
-          {/* Desktop Sidebar */}
           <div className="hidden md:flex flex-col gap-4 flex-1 min-h-0">
             <Scoreboard players={gameState.players} currentPlayerId={socket?.id ?? null} />
             <ChatBox messages={gameState.messages} onSendMessage={handleGuess} disabled={isDrawer || (me?.hasGuessed ?? false) || me?.disconnected === true} />
           </div>
 
-          {/* Mobile Tabs */}
           <div className="flex-1 md:hidden min-h-0">
              <Tabs defaultValue="chat" className="flex flex-col h-full">
                 <TabsList className="grid w-full grid-cols-2">
@@ -968,9 +966,8 @@ export default function DoodleDuelClient() {
           </div>
         </div>
       </main>
+      <audio ref={notificationSoundRef} src="/notification.mp3" preload="auto" className="hidden" />
       <Toaster />
     </>
   );
 }
-
-    
