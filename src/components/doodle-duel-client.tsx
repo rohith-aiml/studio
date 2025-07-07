@@ -1,7 +1,6 @@
 
 "use client";
 
-import { analyzeDrawingHistory } from "@/ai/flows/skip-vote-trigger";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,6 +11,7 @@ import { cn } from "@/lib/utils";
 import {
   Check,
   ChevronRight,
+  ClipboardCopy,
   Clock,
   Eraser,
   PartyPopper,
@@ -28,6 +28,7 @@ import React, {
 } from "react";
 import { Toaster } from "./ui/toaster";
 import { io, Socket } from "socket.io-client";
+import type { AnalyzeDrawingHistoryOutput } from "@/ai/flows/skip-vote-trigger";
 
 // --- TYPES ---
 type Player = {
@@ -74,6 +75,13 @@ const BRUSH_SIZES = [2, 5, 10, 20];
 
 const JoinScreen = ({ onJoin }: { onJoin: (name: string) => void }) => {
   const [name, setName] = useState("");
+  const [roomIdFromUrl, setRoomIdFromUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const id = params.get('roomId');
+    if (id) setRoomIdFromUrl(id.toUpperCase());
+  }, []);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -100,7 +108,7 @@ const JoinScreen = ({ onJoin }: { onJoin: (name: string) => void }) => {
               maxLength={15}
             />
             <Button type="submit" className="w-full h-12 text-lg">
-              Join Game
+              {roomIdFromUrl ? `Join Game: ${roomIdFromUrl}` : "Create New Game"}
             </Button>
           </form>
         </CardContent>
@@ -108,6 +116,46 @@ const JoinScreen = ({ onJoin }: { onJoin: (name: string) => void }) => {
     </div>
   );
 };
+
+const RoomInfo = ({ roomId, toast }: { roomId: string | null; toast: any }) => {
+    if (!roomId) return null;
+
+    const inviteLink = `${window.location.origin}/?roomId=${roomId}`;
+
+    const copyToClipboard = () => {
+        navigator.clipboard.writeText(inviteLink).then(() => {
+            toast({
+                title: "Copied!",
+                description: "Invite link copied to clipboard.",
+            });
+        }).catch(err => {
+            console.error('Failed to copy: ', err);
+            toast({
+                title: "Error",
+                description: "Could not copy link to clipboard.",
+                variant: "destructive"
+            });
+        });
+    };
+
+    return (
+        <Card className="mb-4">
+            <CardHeader className="p-4">
+                <CardTitle className="text-lg">Invite Players</CardTitle>
+            </CardHeader>
+            <CardContent className="p-4 pt-0">
+                <p className="text-sm text-muted-foreground mb-2">Share this link to invite others to room <span className="font-bold text-primary">{roomId}</span>.</p>
+                <div className="flex gap-2">
+                    <Input value={inviteLink} readOnly className="text-sm" />
+                    <Button onClick={copyToClipboard} size="icon" variant="outline">
+                        <ClipboardCopy className="w-4 h-4" />
+                    </Button>
+                </div>
+            </CardContent>
+        </Card>
+    );
+};
+
 
 const Scoreboard = ({ players, currentPlayerId }: { players: Player[]; currentPlayerId: string | null; }) => (
   <Card className="h-full">
@@ -172,7 +220,6 @@ const DrawingCanvas = React.forwardRef<HTMLCanvasElement, {
         const colorRef = useRef("#000000");
         const lineWidthRef = useRef(5);
 
-        // This effect is for drawing paths from other players
         useEffect(() => {
             const canvas = ref && 'current' in ref && ref.current;
             if (!canvas) return;
@@ -221,6 +268,7 @@ const DrawingCanvas = React.forwardRef<HTMLCanvasElement, {
         
         const startDrawing = useCallback((e: React.MouseEvent | React.TouchEvent) => {
             if (!isDrawingPlayer) return;
+            e.preventDefault();
             isDrawing.current = true;
             const coords = getCoords(e.nativeEvent);
             if (coords) {
@@ -236,15 +284,14 @@ const DrawingCanvas = React.forwardRef<HTMLCanvasElement, {
 
         const draw = useCallback((e: React.MouseEvent | React.TouchEvent) => {
             if (!isDrawing.current || !isDrawingPlayer) return;
+            e.preventDefault();
             const coords = getCoords(e.nativeEvent);
              if (coords) {
                 currentPath.current.push(coords);
-                // We no longer draw locally. We rely on the server broadcast and useEffect to draw.
-                // This prevents visual glitches and ensures all clients see the same thing.
                 onDrawing({
                     color: colorRef.current,
                     lineWidth: lineWidthRef.current,
-                    path: currentPath.current,
+                    path: [...currentPath.current], // Send a copy
                 });
             }
         }, [isDrawingPlayer, onDrawing]);
@@ -254,7 +301,6 @@ const DrawingCanvas = React.forwardRef<HTMLCanvasElement, {
             currentPath.current = [];
         }, []);
         
-        // Method for toolbar to update canvas properties
         if (ref && 'current' in ref && ref.current) {
             (ref.current as any).updateBrush = (color: string, lineWidth: number) => {
                 colorRef.current = color;
@@ -367,8 +413,8 @@ const ChatBox = ({ messages, onSendMessage, disabled }: { messages: Message[], o
 // --- MAIN COMPONENT ---
 export default function DoodleDuelClient() {
   const [socket, setSocket] = useState<Socket | null>(null);
-  const [sessionId, setSessionId] = useState<string | null>(null);
   const [name, setName] = useState<string | null>(null);
+  const [roomId, setRoomId] = useState<string | null>(null);
   
   const [gameState, setGameState] = useState<GameState>({
       players: [],
@@ -407,17 +453,15 @@ export default function DoodleDuelClient() {
   useEffect(() => {
     if (!socket) return;
     
-    socket.on("connect", () => {
-        console.log("Connected to server!");
-        const storedSessionId = localStorage.getItem('doodle-duel-session');
-        if (storedSessionId && name) {
-            socket.emit("join", name, storedSessionId);
-        }
-    });
+    socket.on("connect", () => console.log("Connected to server!"));
 
-    socket.on("session", (newSessionId: string) => {
-        setSessionId(newSessionId);
-        localStorage.setItem('doodle-duel-session', newSessionId);
+    socket.on("roomCreated", (newRoomId: string) => {
+        setRoomId(newRoomId);
+        window.history.pushState({}, '', `/?roomId=${newRoomId}`);
+        toast({
+            title: "Room Created!",
+            description: `You are in room ${newRoomId}. Share the link to invite others!`,
+        });
     });
 
     socket.on("gameStateUpdate", (newGameState: GameState) => {
@@ -448,24 +492,46 @@ export default function DoodleDuelClient() {
         });
     });
 
+    socket.on("aiSuggestion", (result: AnalyzeDrawingHistoryOutput) => {
+        toast({
+            title: "AI Suggestion",
+            description: (
+                <div className="flex items-center gap-2">
+                    <Vote />
+                    <div>
+                        <p>{result.reason}</p>
+                        <Button size="sm" className="mt-2">Vote to Skip</Button>
+                    </div>
+                </div>
+            ),
+            duration: 10000,
+        });
+    });
+
+
     socket.on("error", (message: string) => {
         toast({ title: "Error", description: message, variant: "destructive" });
+        if (message.includes("Room not found")) {
+            setTimeout(() => {
+                window.location.href = "/";
+            }, 2000);
+        }
     });
 
     return () => {
         socket.off("connect");
-        socket.off("session");
+        socket.off("roomCreated");
         socket.off("gameStateUpdate");
         socket.off("timerUpdate");
         socket.off("drawingUpdate");
         socket.off("drawerWord");
         socket.off("roundEnd");
+        socket.off("aiSuggestion");
         socket.off("error");
     };
 
-  }, [socket, name, toast, gameState.players]);
+  }, [socket, toast, gameState.players]);
   
-  // Update canvas brush
   useEffect(() => {
     if (canvasRef.current && (canvasRef.current as any).updateBrush) {
         (canvasRef.current as any).updateBrush(currentColor, currentLineWidth);
@@ -474,72 +540,49 @@ export default function DoodleDuelClient() {
 
   // AI Drawing Analysis
   useEffect(() => {
+    clearInterval(aiCheckIntervalRef.current);
     if (gameState.isRoundActive && !isDrawer) {
-      aiCheckIntervalRef.current = setInterval(async () => {
-        const historyString = JSON.stringify(gameState.drawingHistory.flatMap(p => p.path));
-        if (historyString.length > 50 && fullWord) { // Using fullWord from drawer as target
-            try {
-                const result = await analyzeDrawingHistory({
-                    drawingHistory: historyString,
-                    targetWord: fullWord, // This is an issue: guessers don't know the word.
-                });
-                if (result.shouldInitiateSkipVote) {
-                    toast({
-                        title: "AI Suggestion",
-                        description: (
-                            <div className="flex items-center gap-2">
-                                <Vote />
-                                <div>
-                                    <p>{result.reason}</p>
-                                    <Button size="sm" className="mt-2">Vote to Skip</Button>
-                                </div>
-                            </div>
-                        ),
-                        duration: 10000,
-                    });
-                }
-            } catch (error) {
-                console.error("AI analysis failed:", error);
-            }
+      aiCheckIntervalRef.current = setInterval(() => {
+        if (gameState.drawingHistory.length > 0) {
+            socket?.emit("analyzeDrawing");
         }
       }, AI_CHECK_INTERVAL);
     }
     return () => clearInterval(aiCheckIntervalRef.current);
-  }, [gameState.isRoundActive, isDrawer, gameState.drawingHistory, fullWord, toast]);
+  }, [gameState.isRoundActive, isDrawer, gameState.drawingHistory, socket]);
 
   // --- Callbacks & Handlers ---
 
-  const handleJoin = (name: string) => {
-    setName(name);
-    const storedSessionId = localStorage.getItem('doodle-duel-session');
-    socket?.emit("join", name, storedSessionId);
+  const handleJoin = (newName: string) => {
+    setName(newName);
+    const params = new URLSearchParams(window.location.search);
+    const roomIdFromUrl = params.get('roomId');
+
+    if (roomIdFromUrl) {
+        socket?.emit("joinRoom", newName, roomIdFromUrl);
+    } else {
+        socket?.emit("createRoom", newName);
+    }
   };
 
-  const handleStartGame = () => {
-    socket?.emit("startGame");
-  };
-  
-  const handleGuess = (guess: string) => {
-    socket?.emit("sendMessage", guess);
-  };
-
+  const handleStartGame = () => socket?.emit("startGame");
+  const handleGuess = (guess: string) => socket?.emit("sendMessage", guess);
   const handleStartPath = (path: DrawingPath) => {
     socket?.emit("startPath", path);
+    setGameState(prev => ({...prev, drawingHistory: [...prev.drawingHistory, path]}));
   };
-
   const handleDrawPath = (path: DrawingPath) => {
     socket?.emit("drawPath", path);
+    setGameState(prev => {
+        const newHistory = [...prev.drawingHistory];
+        newHistory[newHistory.length - 1] = path;
+        return {...prev, drawingHistory: newHistory};
+    });
   };
+  const handleUndo = () => socket?.emit("undo");
+  const handleClear = () => socket?.emit("clearCanvas");
 
-  const handleUndo = () => {
-    socket?.emit("undo");
-  };
-
-  const handleClear = () => {
-    socket?.emit("clearCanvas");
-  };
-
-  if (!name || !socket || !me) {
+  if (!name) {
     return <JoinScreen onJoin={handleJoin} />;
   }
 
@@ -547,14 +590,21 @@ export default function DoodleDuelClient() {
     <>
       <main className="flex flex-col md:flex-row h-screen bg-background p-4 gap-4 overflow-hidden">
         <div className="w-full md:w-1/4 flex flex-col gap-4">
-          <Scoreboard players={gameState.players} currentPlayerId={socket.id} />
-          <ChatBox messages={gameState.messages} onSendMessage={handleGuess} disabled={isDrawer || me?.hasGuessed} />
+          <RoomInfo roomId={roomId} toast={toast} />
+          <Scoreboard players={gameState.players} currentPlayerId={socket?.id ?? null} />
+          <ChatBox messages={gameState.messages} onSendMessage={handleGuess} disabled={isDrawer || (me?.hasGuessed ?? false)} />
         </div>
         <div className="w-full md:w-3/4 flex flex-col items-center justify-center gap-2">
             {!gameState.isRoundActive ? (
                 <Card className="p-8 text-center">
-                    <CardTitle className="text-2xl mb-4">Waiting for the drawer to start...</CardTitle>
-                    {isDrawer && <Button onClick={handleStartGame} size="lg">Start Round</Button>}
+                    <CardTitle className="text-2xl mb-2">Lobby</CardTitle>
+                    <CardContent className="text-muted-foreground">
+                        <p>Waiting for players...</p>
+                        <p>{gameState.players.length} / 8 players</p>
+                    </CardContent>
+                    {isDrawer && gameState.players.length >= 2 && <Button onClick={handleStartGame} size="lg">Start Round</Button>}
+                    {isDrawer && gameState.players.length < 2 && <p className="mt-4 text-sm">You need at least 2 players to start.</p>}
+                    {!isDrawer && <p className="mt-4 text-sm">Waiting for {gameState.players.find(p => p.isDrawing)?.name || 'the host'} to start the game.</p>}
                 </Card>
             ) : (
                 <>

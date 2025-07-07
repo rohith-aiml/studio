@@ -5,6 +5,7 @@ import express from "express";
 import next from "next";
 import fs from "fs";
 import path from "path";
+import { analyzeDrawingHistory } from "@/ai/flows/skip-vote-trigger";
 
 const dev = process.env.NODE_ENV !== "production";
 const app = next({ dev });
@@ -40,11 +41,16 @@ type GameState = {
   drawingHistory: DrawingPath[];
   isRoundActive: boolean;
   currentWord: string;
-  maskedWord: string;
   revealedIndices: number[];
   roundTimer: number;
   drawerId: string | null;
 };
+
+type RoomState = {
+    gameState: GameState;
+    roundInterval: NodeJS.Timeout | null;
+    hintInterval: NodeJS.Timeout | null;
+}
 
 app.prepare().then(() => {
   const expressApp = express();
@@ -56,7 +62,8 @@ app.prepare().then(() => {
     },
   });
 
-  // --- GAME STATE ---
+  // --- GAME STATE MANAGEMENT ---
+  const gameRooms = new Map<string, RoomState>();
   let words: string[] = [];
   try {
     const wordsPath = path.join(process.cwd(), "public", "words.txt");
@@ -66,215 +73,284 @@ app.prepare().then(() => {
     words = ["default", "word", "list"];
   }
 
-  const gameState: GameState = {
-    players: [],
-    messages: [],
-    drawingHistory: [],
-    isRoundActive: false,
-    currentWord: "",
-    maskedWord: "",
-    revealedIndices: [],
-    roundTimer: 90,
-    drawerId: null,
+  // --- HELPER FUNCTIONS ---
+  const generateRoomId = () => {
+    let newId;
+    do {
+      newId = Math.random().toString(36).substring(2, 7).toUpperCase();
+    } while (gameRooms.has(newId));
+    return newId;
   };
-
-  let roundInterval: NodeJS.Timeout | null = null;
-  let hintInterval: NodeJS.Timeout | null = null;
 
   const getMaskedWord = (word: string, revealedIndices: number[]) => {
     return word.split("").map((letter, index) => (revealedIndices.includes(index) || letter === ' ' ? letter : "_")).join(" ");
   };
 
-  const broadcastGameState = () => {
-    io.emit("gameStateUpdate", {
-      ...gameState,
-      currentWord: gameState.isRoundActive && gameState.drawerId !== null ? getMaskedWord(gameState.currentWord, gameState.revealedIndices) : ""
-    });
+  const broadcastGameState = (roomId: string) => {
+    const room = gameRooms.get(roomId);
+    if (!room) return;
+
+    const maskedState = {
+      ...room.gameState,
+      currentWord: room.gameState.isRoundActive && room.gameState.drawerId !== null 
+          ? getMaskedWord(room.gameState.currentWord, room.gameState.revealedIndices) 
+          : ""
+    };
+    io.to(roomId).emit("gameStateUpdate", maskedState);
   };
 
-  const broadcastFullWordToDrawer = () => {
-    if (gameState.drawerId) {
-        io.to(gameState.drawerId).emit("drawerWord", gameState.currentWord);
-    }
+  const broadcastFullWordToDrawer = (roomId: string) => {
+    const room = gameRooms.get(roomId);
+    if (!room || !room.gameState.drawerId) return;
+    io.to(room.gameState.drawerId).emit("drawerWord", room.gameState.currentWord);
   };
 
-  const startRound = () => {
-    if (gameState.players.length < 2) {
-      io.emit("error", "Not enough players to start a round.");
+  // --- GAME LOGIC (PER ROOM) ---
+  const startRound = (roomId: string) => {
+    const room = gameRooms.get(roomId);
+    if (!room) return;
+    if (room.gameState.players.length < 2) {
+      io.to(roomId).emit("error", "Not enough players to start a round.");
       return;
     }
     
-    // Rotate drawer
-    const currentDrawerIndex = gameState.players.findIndex(p => p.id === gameState.drawerId);
-    const nextDrawerIndex = (currentDrawerIndex + 1) % gameState.players.length;
-    const newDrawer = gameState.players[nextDrawerIndex];
+    const currentDrawerIndex = room.gameState.players.findIndex(p => p.id === room.gameState.drawerId);
+    const nextDrawerIndex = (currentDrawerIndex + 1) % room.gameState.players.length;
+    const newDrawer = room.gameState.players[nextDrawerIndex];
     
     if (!newDrawer) return;
 
-    // Reset for new round
-    if (roundInterval) clearInterval(roundInterval);
-    if (hintInterval) clearInterval(hintInterval);
+    if (room.roundInterval) clearInterval(room.roundInterval);
+    if (room.hintInterval) clearInterval(room.hintInterval);
 
-    gameState.drawingHistory = [];
-    gameState.messages = [{ playerName: "System", text: `${newDrawer.name} is now drawing!`, isCorrect: false }];
-    gameState.currentWord = words[Math.floor(Math.random() * words.length)];
-    gameState.revealedIndices = [];
-    gameState.roundTimer = 90;
-    gameState.isRoundActive = true;
-    gameState.drawerId = newDrawer.id;
-    gameState.players = gameState.players.map(p => ({
+    room.gameState.drawingHistory = [];
+    room.gameState.messages = [{ playerName: "System", text: `${newDrawer.name} is now drawing!`, isCorrect: false }];
+    room.gameState.currentWord = words[Math.floor(Math.random() * words.length)];
+    room.gameState.revealedIndices = [];
+    room.gameState.roundTimer = 90;
+    room.gameState.isRoundActive = true;
+    room.gameState.drawerId = newDrawer.id;
+    room.gameState.players = room.gameState.players.map(p => ({
         ...p,
         isDrawing: p.id === newDrawer.id,
         hasGuessed: p.id === newDrawer.id,
     }));
     
-    // Start timers
-    roundInterval = setInterval(gameTick, 1000);
+    room.roundInterval = setInterval(() => gameTick(roomId), 1000);
 
-    broadcastGameState();
-    broadcastFullWordToDrawer();
+    broadcastGameState(roomId);
+    broadcastFullWordToDrawer(roomId);
   };
   
-  const gameTick = () => {
-    gameState.roundTimer--;
+  const gameTick = (roomId: string) => {
+    const room = gameRooms.get(roomId);
+    if (!room) return;
+    room.gameState.roundTimer--;
 
-    // Reveal hints
-    if (gameState.roundTimer === 45) {
-        revealHint();
-        hintInterval = setInterval(revealHint, 10000);
+    if (room.gameState.roundTimer === 45) {
+        revealHint(roomId);
+        room.hintInterval = setInterval(() => revealHint(roomId), 10000);
     }
 
-    if (gameState.roundTimer <= 0) {
-      endRound(false);
+    if (room.gameState.roundTimer <= 0) {
+      endRound(roomId, false);
     } else {
-      io.emit("timerUpdate", gameState.roundTimer);
+      io.to(roomId).emit("timerUpdate", room.gameState.roundTimer);
     }
   };
 
-  const revealHint = () => {
-    const unrevealed = gameState.currentWord.split('').map((_, i) => i).filter(i => !gameState.revealedIndices.includes(i) && gameState.currentWord[i] !== ' ');
-    if (unrevealed.length > 2) { // Keep at least 2 letters hidden
+  const revealHint = (roomId: string) => {
+    const room = gameRooms.get(roomId);
+    if (!room) return;
+    const { currentWord, revealedIndices } = room.gameState;
+    const unrevealed = currentWord.split('').map((_, i) => i).filter(i => !revealedIndices.includes(i) && currentWord[i] !== ' ');
+    if (unrevealed.length > 2) { 
         const randomIndex = unrevealed[Math.floor(Math.random() * unrevealed.length)];
-        gameState.revealedIndices.push(randomIndex);
-        broadcastGameState();
+        revealedIndices.push(randomIndex);
+        broadcastGameState(roomId);
     }
   }
 
-  const endRound = (wordGuessed: boolean) => {
-    if (roundInterval) clearInterval(roundInterval);
-    if (hintInterval) clearInterval(hintInterval);
-    roundInterval = null;
-    hintInterval = null;
+  const endRound = (roomId: string, wordGuessed: boolean) => {
+    const room = gameRooms.get(roomId);
+    if (!room) return;
 
-    gameState.isRoundActive = false;
+    if (room.roundInterval) clearInterval(room.roundInterval);
+    if (room.hintInterval) clearInterval(room.hintInterval);
+    room.roundInterval = null;
+    room.hintInterval = null;
+
+    if (!room.gameState.isRoundActive) return;
+
+    room.gameState.isRoundActive = false;
     const message = wordGuessed ? "All players guessed the word!" : "Time's up!";
-    gameState.messages.push({ playerName: "System", text: `${message} The word was: ${gameState.currentWord}`, isCorrect: false });
+    room.gameState.messages.push({ playerName: "System", text: `${message} The word was: ${room.gameState.currentWord}`, isCorrect: false });
     
-    io.emit("roundEnd", { word: gameState.currentWord });
-    broadcastGameState();
+    io.to(roomId).emit("roundEnd", { word: room.gameState.currentWord });
+    broadcastGameState(roomId);
 
-    // Start next round after a delay
-    setTimeout(startRound, 5000);
+    setTimeout(() => startRound(roomId), 5000);
   };
 
 
   io.on("connection", (socket) => {
     console.log(`Socket connected: ${socket.id}`);
+    let currentRoomId: string | null = null;
 
-    socket.on("join", (name: string, sessionId?: string) => {
-        let player: Player | undefined = gameState.players.find(p => p.id === sessionId);
+    socket.on("createRoom", (name: string) => {
+        const roomId = generateRoomId();
+        currentRoomId = roomId;
+        socket.join(roomId);
 
-        if (player) {
-            player.id = socket.id; // Update socket id on reconnect
-        } else {
-             player = { id: socket.id, name, score: 0, isDrawing: false, hasGuessed: false };
-             gameState.players.push(player);
+        const player: Player = { id: socket.id, name, score: 0, isDrawing: true, hasGuessed: true };
+
+        const newGameState: GameState = {
+            players: [player],
+            messages: [{ playerName: "System", text: `${name} created the game.`, isCorrect: false }],
+            drawingHistory: [], isRoundActive: false, currentWord: "", revealedIndices: [],
+            roundTimer: 90, drawerId: player.id,
+        };
+
+        gameRooms.set(roomId, { gameState: newGameState, roundInterval: null, hintInterval: null });
+        socket.emit("roomCreated", roomId);
+        broadcastGameState(roomId);
+    });
+
+    socket.on("joinRoom", (name: string, roomId: string) => {
+        const room = gameRooms.get(roomId);
+        if (!room) {
+            socket.emit("error", "Room not found. Please check the ID or create a new game.");
+            return;
         }
-        
-        socket.emit("session", player.id);
-        
-        // Make first player the drawer
-        if (gameState.players.length === 1) {
-            player.isDrawing = true;
-            player.hasGuessed = true;
-            gameState.drawerId = player.id;
+
+        if (room.gameState.players.find(p => p.name.toLowerCase() === name.toLowerCase())) {
+            socket.emit("error", "A player with that name is already in this room.");
+            return;
         }
 
-        gameState.messages.push({ playerName: "System", text: `${player.name} has joined the game.`, isCorrect: false });
-        broadcastGameState();
+        currentRoomId = roomId;
+        socket.join(roomId);
+        
+        const player: Player = { id: socket.id, name, score: 0, isDrawing: false, hasGuessed: false };
+        room.gameState.players.push(player);
+        room.gameState.messages.push({ playerName: "System", text: `${player.name} has joined the game.`, isCorrect: false });
+        
+        broadcastGameState(roomId);
     });
 
     socket.on("startGame", () => {
-        if (socket.id === gameState.drawerId && !gameState.isRoundActive) {
-            startRound();
+        if (!currentRoomId) return;
+        const room = gameRooms.get(currentRoomId);
+        if (room && socket.id === room.gameState.drawerId && !room.gameState.isRoundActive) {
+            startRound(currentRoomId);
         }
     });
 
     socket.on("sendMessage", (text: string) => {
-        const player = gameState.players.find(p => p.id === socket.id);
+        if (!currentRoomId) return;
+        const room = gameRooms.get(currentRoomId);
+        if (!room) return;
+
+        const player = room.gameState.players.find(p => p.id === socket.id);
         if (!player || player.isDrawing || player.hasGuessed) return;
 
-        const isCorrect = text.toLowerCase() === gameState.currentWord.toLowerCase();
-        gameState.messages.push({ playerName: player.name, text, isCorrect });
+        const isCorrect = text.toLowerCase() === room.gameState.currentWord.toLowerCase();
+        room.gameState.messages.push({ playerName: player.name, text, isCorrect });
 
         if(isCorrect) {
             player.hasGuessed = true;
-            const guesserPoints = Math.max(10, Math.floor(gameState.roundTimer * 0.5));
+            const guesserPoints = Math.max(10, Math.floor(room.gameState.roundTimer * 0.5));
             player.score += guesserPoints;
 
-            const drawer = gameState.players.find(p => p.isDrawing);
-            if (drawer) {
-                drawer.score += 20;
-            }
+            const drawer = room.gameState.players.find(p => p.isDrawing);
+            if (drawer) drawer.score += 20;
 
-            // Check if round is over
-            const allGuessed = gameState.players.filter(p => !p.isDrawing).every(p => p.hasGuessed);
+            const allGuessed = room.gameState.players.filter(p => !p.isDrawing).every(p => p.hasGuessed);
             if (allGuessed) {
-                endRound(true);
+                endRound(currentRoomId, true);
             }
         }
-        broadcastGameState();
+        broadcastGameState(currentRoomId);
     });
 
     socket.on("startPath", (path: DrawingPath) => {
-        if (socket.id === gameState.drawerId) {
-            gameState.drawingHistory.push(path);
-            io.emit("drawingUpdate", gameState.drawingHistory);
+        if (!currentRoomId) return;
+        const room = gameRooms.get(currentRoomId);
+        if (room && socket.id === room.gameState.drawerId) {
+            room.gameState.drawingHistory.push(path);
+            socket.to(currentRoomId).emit("drawingUpdate", room.gameState.drawingHistory);
         }
     });
 
     socket.on("drawPath", (path: DrawingPath) => {
-        if (socket.id === gameState.drawerId && gameState.drawingHistory.length > 0) {
-            gameState.drawingHistory[gameState.drawingHistory.length - 1] = path;
-            io.emit("drawingUpdate", gameState.drawingHistory);
+        if (!currentRoomId) return;
+        const room = gameRooms.get(currentRoomId);
+        if (room && socket.id === room.gameState.drawerId && room.gameState.drawingHistory.length > 0) {
+            room.gameState.drawingHistory[room.gameState.drawingHistory.length - 1] = path;
+            socket.to(currentRoomId).emit("drawingUpdate", room.gameState.drawingHistory);
         }
     });
     
     socket.on("undo", () => {
-        if (socket.id === gameState.drawerId) {
-            gameState.drawingHistory.pop();
-            io.emit("drawingUpdate", gameState.drawingHistory);
+        if (!currentRoomId) return;
+        const room = gameRooms.get(currentRoomId);
+        if (room && socket.id === room.gameState.drawerId) {
+            room.gameState.drawingHistory.pop();
+            io.to(currentRoomId).emit("drawingUpdate", room.gameState.drawingHistory);
         }
     });
 
     socket.on("clearCanvas", () => {
-        if (socket.id === gameState.drawerId) {
-            gameState.drawingHistory = [];
-            io.emit("drawingUpdate", gameState.drawingHistory);
+        if (!currentRoomId) return;
+        const room = gameRooms.get(currentRoomId);
+        if (room && socket.id === room.gameState.drawerId) {
+            room.gameState.drawingHistory = [];
+            io.to(currentRoomId).emit("drawingUpdate", room.gameState.drawingHistory);
+        }
+    });
+
+    socket.on("analyzeDrawing", async () => {
+        if (!currentRoomId) return;
+        const room = gameRooms.get(currentRoomId);
+        if (!room || !room.gameState.isRoundActive) return;
+
+        try {
+            const result = await analyzeDrawingHistory({
+                drawingHistory: JSON.stringify(room.gameState.drawingHistory),
+                targetWord: room.gameState.currentWord,
+            });
+            if (result.shouldInitiateSkipVote) {
+                io.to(currentRoomId).emit("aiSuggestion", result);
+            }
+        } catch (error) {
+            console.error("AI analysis failed on server:", error);
         }
     });
 
     socket.on("disconnect", () => {
       console.log(`Socket disconnected: ${socket.id}`);
-      const player = gameState.players.find(p => p.id === socket.id);
+      if (!currentRoomId) return;
+      const room = gameRooms.get(currentRoomId);
+      if (!room) return;
+
+      const player = room.gameState.players.find(p => p.id === socket.id);
       if(player) {
-          gameState.messages.push({ playerName: "System", text: `${player.name} has left the game.`, isCorrect: false });
+          room.gameState.messages.push({ playerName: "System", text: `${player.name} has left the game.`, isCorrect: false });
       }
-      gameState.players = gameState.players.filter(p => p.id !== socket.id);
-      if (socket.id === gameState.drawerId) {
-        endRound(false);
+      room.gameState.players = room.gameState.players.filter(p => p.id !== socket.id);
+      
+      if (room.gameState.players.length === 0) {
+        if (room.roundInterval) clearInterval(room.roundInterval);
+        if (room.hintInterval) clearInterval(room.hintInterval);
+        gameRooms.delete(currentRoomId);
+        console.log(`Room ${currentRoomId} closed.`);
+        return;
       }
-      broadcastGameState();
+
+      if (socket.id === room.gameState.drawerId) {
+        endRound(currentRoomId, false);
+      }
+      broadcastGameState(currentRoomId);
     });
   });
 
