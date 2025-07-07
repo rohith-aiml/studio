@@ -23,6 +23,8 @@ import {
   ClipboardCopy,
   Clock,
   Eraser,
+  Eye,
+  EyeOff,
   PartyPopper,
   Pencil,
   Trophy,
@@ -275,16 +277,35 @@ const Timer = ({ time }: { time: number }) => (
   </div>
 );
 
-const WordDisplay = ({ maskedWord, isDrawing, fullWord }: { maskedWord: string; isDrawing: boolean; fullWord: string; }) => (
-  <div className="text-center py-4">
-    <p className="text-muted-foreground text-sm font-medium">
-      {isDrawing ? "You are drawing:" : "Guess the word!"}
-    </p>
-    <p className="text-4xl font-bold tracking-widest font-headline text-primary transition-all duration-300">
-      {isDrawing ? fullWord : maskedWord}
-    </p>
-  </div>
-);
+const WordDisplay = ({ maskedWord, isDrawing, fullWord }: { maskedWord: string; isDrawing: boolean; fullWord: string; }) => {
+    const [isWordVisible, setIsWordVisible] = useState(true);
+
+    // Reset visibility when the drawer gets a new word
+    useEffect(() => {
+        if (isDrawing && fullWord) {
+            setIsWordVisible(true);
+        }
+    }, [fullWord, isDrawing]);
+    
+    return (
+      <div className="text-center py-4">
+        <p className="text-muted-foreground text-sm font-medium">
+          {isDrawing ? "You are drawing:" : "Guess the word!"}
+        </p>
+        <div className="flex items-center justify-center gap-2">
+            <p className="text-4xl font-bold tracking-widest font-headline text-primary transition-all duration-300">
+              {isDrawing ? (isWordVisible ? fullWord : '*'.repeat(fullWord.length).split('').join(' ')) : maskedWord}
+            </p>
+            {isDrawing && fullWord && (
+                <Button onClick={() => setIsWordVisible(!isWordVisible)} size="icon" variant="ghost">
+                    {isWordVisible ? <EyeOff className="w-6 h-6" /> : <Eye className="w-6 h-6" />}
+                    <span className="sr-only">{isWordVisible ? 'Hide word' : 'Show word'}</span>
+                </Button>
+            )}
+        </div>
+      </div>
+    );
+};
 
 const DrawingCanvas = React.forwardRef<HTMLCanvasElement, { 
     onDrawStart: (path: DrawingPath) => void, 
