@@ -3,7 +3,7 @@
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -183,6 +183,9 @@ const JoinScreen = ({ onJoin }: { onJoin: (name: string, avatarUrl: string, room
             </Button>
           </form>
         </CardContent>
+        <CardFooter className="justify-center text-xs text-muted-foreground">
+            <p>v1</p>
+        </CardFooter>
       </Card>
     </div>
   );
