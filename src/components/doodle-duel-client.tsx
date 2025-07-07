@@ -160,8 +160,13 @@ const WordDisplay = ({ maskedWord, isDrawing, fullWord }: { maskedWord: string; 
   </div>
 );
 
-const DrawingCanvas = React.forwardRef<HTMLCanvasElement, { onDrawEnd: (path: DrawingPath) => void, isDrawingPlayer: boolean, drawingHistory: DrawingPath[] }>(
-    ({ onDrawEnd, isDrawingPlayer, drawingHistory }, ref) => {
+const DrawingCanvas = React.forwardRef<HTMLCanvasElement, { 
+    onDrawStart: (path: DrawingPath) => void, 
+    onDrawing: (path: DrawingPath) => void, 
+    isDrawingPlayer: boolean, 
+    drawingHistory: DrawingPath[] 
+}>(
+    ({ onDrawStart, onDrawing, isDrawingPlayer, drawingHistory }, ref) => {
         const isDrawing = useRef(false);
         const currentPath = useRef<DrawingPoint[]>([]);
         const colorRef = useRef("#000000");
@@ -219,43 +224,35 @@ const DrawingCanvas = React.forwardRef<HTMLCanvasElement, { onDrawEnd: (path: Dr
             isDrawing.current = true;
             const coords = getCoords(e.nativeEvent);
             if (coords) {
-                currentPath.current = [coords];
+                const newPath = {
+                    color: colorRef.current,
+                    lineWidth: lineWidthRef.current,
+                    path: [coords],
+                };
+                currentPath.current = newPath.path;
+                onDrawStart(newPath);
             }
-        }, [isDrawingPlayer]);
+        }, [isDrawingPlayer, onDrawStart]);
 
         const draw = useCallback((e: React.MouseEvent | React.TouchEvent) => {
             if (!isDrawing.current || !isDrawingPlayer) return;
             const coords = getCoords(e.nativeEvent);
-             if (coords && ref && 'current' in ref && ref.current) {
-                const canvas = ref.current;
-                const ctx = canvas.getContext('2d');
-                if(!ctx) return;
-
+             if (coords) {
                 currentPath.current.push(coords);
-                
-                // Draw locally for responsiveness
-                ctx.strokeStyle = colorRef.current;
-                ctx.lineWidth = lineWidthRef.current;
-                ctx.lineCap = "round";
-                ctx.lineJoin = "round";
-                ctx.beginPath();
-                ctx.moveTo(currentPath.current[currentPath.current.length - 2]?.x, currentPath.current[currentPath.current.length - 2]?.y);
-                ctx.lineTo(coords.x, coords.y);
-                ctx.stroke();
-            }
-        }, [isDrawingPlayer, ref]);
-
-        const stopDrawing = useCallback(() => {
-            if (isDrawing.current && isDrawingPlayer && currentPath.current.length > 0) {
-                 onDrawEnd({
+                // We no longer draw locally. We rely on the server broadcast and useEffect to draw.
+                // This prevents visual glitches and ensures all clients see the same thing.
+                onDrawing({
                     color: colorRef.current,
                     lineWidth: lineWidthRef.current,
                     path: currentPath.current,
                 });
             }
+        }, [isDrawingPlayer, onDrawing]);
+
+        const stopDrawing = useCallback(() => {
             isDrawing.current = false;
             currentPath.current = [];
-        }, [isDrawingPlayer, onDrawEnd]);
+        }, []);
         
         // Method for toolbar to update canvas properties
         if (ref && 'current' in ref && ref.current) {
@@ -526,8 +523,12 @@ export default function DoodleDuelClient() {
     socket?.emit("sendMessage", guess);
   };
 
-  const handleDrawEnd = (path: DrawingPath) => {
-    socket?.emit("draw", path);
+  const handleStartPath = (path: DrawingPath) => {
+    socket?.emit("startPath", path);
+  };
+
+  const handleDrawPath = (path: DrawingPath) => {
+    socket?.emit("drawPath", path);
   };
 
   const handleUndo = () => {
@@ -563,7 +564,8 @@ export default function DoodleDuelClient() {
                     </div>
                     <DrawingCanvas 
                         ref={canvasRef} 
-                        onDrawEnd={handleDrawEnd} 
+                        onDrawStart={handleStartPath}
+                        onDrawing={handleDrawPath} 
                         isDrawingPlayer={isDrawer}
                         drawingHistory={gameState.drawingHistory}
                     />

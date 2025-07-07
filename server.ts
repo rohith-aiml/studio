@@ -236,9 +236,16 @@ app.prepare().then(() => {
         broadcastGameState();
     });
 
-    socket.on("draw", (path: DrawingPath) => {
-        if(socket.id === gameState.drawerId) {
+    socket.on("startPath", (path: DrawingPath) => {
+        if (socket.id === gameState.drawerId) {
             gameState.drawingHistory.push(path);
+            io.emit("drawingUpdate", gameState.drawingHistory);
+        }
+    });
+
+    socket.on("drawPath", (path: DrawingPath) => {
+        if (socket.id === gameState.drawerId && gameState.drawingHistory.length > 0) {
+            gameState.drawingHistory[gameState.drawingHistory.length - 1] = path;
             io.emit("drawingUpdate", gameState.drawingHistory);
         }
     });
