@@ -76,14 +76,14 @@ const DRAWING_COLORS = [
 ];
 const BRUSH_SIZES = [2, 5, 10, 20];
 const AVATARS = [
-    { url: 'https://placehold.co/80x80.png', hint: 'boy avatar' },
-    { url: 'https://placehold.co/80x80.png', hint: 'man cartoon' },
-    { url: 'https://placehold.co/80x80.png', hint: 'boy character' },
-    { url: 'https://placehold.co/80x80.png', hint: 'male face' },
-    { url: 'https://placehold.co/80x80.png', hint: 'girl avatar' },
-    { url: 'https://placehold.co/80x80.png', hint: 'woman cartoon' },
-    { url: 'https://placehold.co/80x80.png', hint: 'girl character' },
-    { url: 'https://placehold.co/80x80.png', hint: 'female face' },
+    { url: 'https://placehold.co/80x80/A9C2BD/FFFFFF.png', hint: 'boy avatar' },
+    { url: 'https://placehold.co/80x80/759FBC/FFFFFF.png', hint: 'man cartoon' },
+    { url: 'https://placehold.co/80x80/CAD2C5/FFFFFF.png', hint: 'boy character' },
+    { url: 'https://placehold.co/80x80/84A98C/FFFFFF.png', hint: 'male face' },
+    { url: 'https://placehold.co/80x80/F4A261/FFFFFF.png', hint: 'girl avatar' },
+    { url: 'https://placehold.co/80x80/E76F51/FFFFFF.png', hint: 'woman cartoon' },
+    { url: 'https://placehold.co/80x80/DDA15E/FFFFFF.png', hint: 'girl character' },
+    { url: 'https://placehold.co/80x80/BC6C25/FFFFFF.png', hint: 'female face' },
 ];
 
 
