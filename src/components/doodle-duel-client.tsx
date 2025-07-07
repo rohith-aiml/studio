@@ -214,7 +214,7 @@ const RoomInfo = ({ roomId, toast }: { roomId: string | null; toast: any }) => {
     };
 
     return (
-        <Card className="mb-4">
+        <Card className="mb-4 flex-shrink-0">
             <CardHeader className="p-4">
                 <CardTitle className="text-lg">Invite Players</CardTitle>
             </CardHeader>
@@ -233,7 +233,7 @@ const RoomInfo = ({ roomId, toast }: { roomId: string | null; toast: any }) => {
 
 
 const Scoreboard = ({ players, currentPlayerId }: { players: Player[]; currentPlayerId: string | null; }) => (
-  <Card className="h-full">
+  <Card className="h-full flex-shrink-0">
     <CardHeader>
       <CardTitle className="flex items-center gap-2">
         <Users className="text-primary" /> Scoreboard
@@ -700,11 +700,31 @@ export default function DoodleDuelClient() {
     socket.on("timerUpdate", (time: number) => {
         setGameState(prev => ({...prev, roundTimer: time}));
     });
+    
+    socket.on("pathStarted", (path: DrawingPath) => {
+        setGameState(prev => ({...prev, drawingHistory: [...prev.drawingHistory, path]}));
+    });
 
-    socket.on("drawingUpdate", (history: DrawingPath[]) => {
-        setGameState(prev => ({...prev, drawingHistory: history}));
+    socket.on("pathUpdated", (path: DrawingPath) => {
+        setGameState(prev => {
+            const newHistory = [...prev.drawingHistory];
+            newHistory[newHistory.length - 1] = path;
+            return {...prev, drawingHistory: newHistory};
+        });
+    });
+
+    socket.on("drawingUndone", () => {
+        setGameState(prev => {
+            const newHistory = [...prev.drawingHistory];
+            newHistory.pop();
+            return {...prev, drawingHistory: newHistory};
+        });
     });
     
+    socket.on("canvasCleared", () => {
+        setGameState(prev => ({...prev, drawingHistory: []}));
+    });
+
     socket.on("drawerWord", (word: string) => {
         setFullWord(word);
     });
@@ -772,7 +792,10 @@ export default function DoodleDuelClient() {
         socket.off("roomCreated");
         socket.off("gameStateUpdate");
         socket.off("timerUpdate");
-        socket.off("drawingUpdate");
+        socket.off("pathStarted");
+        socket.off("pathUpdated");
+        socket.off("drawingUndone");
+        socket.off("canvasCleared");
         socket.off("drawerWord");
         socket.off("promptWordChoice");
         socket.off("roundEnd");
@@ -824,20 +847,35 @@ export default function DoodleDuelClient() {
     setWordChoices([]);
   };
 
-  const handleStartPath = (path: DrawingPath) => {
+  const handleStartPath = useCallback((path: DrawingPath) => {
     socket?.emit("startPath", path);
+    // Optimistic update for the drawer
     setGameState(prev => ({...prev, drawingHistory: [...prev.drawingHistory, path]}));
-  };
-  const handleDrawPath = (path: DrawingPath) => {
+  }, [socket]);
+
+  const handleDrawPath = useCallback((path: DrawingPath) => {
     socket?.emit("drawPath", path);
+    // Optimistic update for the drawer
     setGameState(prev => {
         const newHistory = [...prev.drawingHistory];
         newHistory[newHistory.length - 1] = path;
         return {...prev, drawingHistory: newHistory};
     });
-  };
-  const handleUndo = () => socket?.emit("undo");
-  const handleClear = () => socket?.emit("clearCanvas");
+  }, [socket]);
+
+  const handleUndo = useCallback(() => {
+    socket?.emit("undo");
+    setGameState(prev => {
+        const newHistory = [...prev.drawingHistory];
+        newHistory.pop();
+        return {...prev, drawingHistory: newHistory};
+    });
+  }, [socket]);
+  
+  const handleClear = useCallback(() => {
+    socket?.emit("clearCanvas");
+    setGameState(prev => ({...prev, drawingHistory: []}));
+  }, [socket]);
 
   const toggleFullscreen = () => setIsCanvasFullscreen(prev => !prev);
   
@@ -897,18 +935,15 @@ export default function DoodleDuelClient() {
         </DialogContent>
       </Dialog>
 
-      <main className="flex flex-col md:flex-row h-dvh bg-background p-2 md:p-4 gap-4">
-        <div className={cn("w-full md:w-1/4 flex flex-col gap-4 min-h-0", isCanvasFullscreen && "hidden")}>
-          <RoomInfo roomId={roomId} toast={toast} />
-          <Scoreboard players={gameState.players} currentPlayerId={socket?.id ?? null} />
-          <ChatBox messages={gameState.messages} onSendMessage={handleGuess} disabled={isDrawer || (me?.hasGuessed ?? false) || me?.disconnected === true} />
-        </div>
+      <main className="flex flex-col md:flex-row h-screen bg-background p-2 md:p-4 gap-4">
         <div 
           ref={canvasAreaRef}
           onClick={handleCanvasAreaClick}
           className={cn(
-            "w-full md:w-3/4 flex flex-col items-center justify-start gap-2",
-            isCanvasFullscreen && "fixed inset-0 z-50 bg-background p-4 flex"
+            "w-full flex flex-col items-center justify-start gap-2",
+            isCanvasFullscreen 
+                ? "fixed inset-0 z-50 bg-background p-4 flex" 
+                : "relative md:w-3/4"
           )}
         >
             {!gameState.isRoundActive && roomId ? (
@@ -952,7 +987,7 @@ export default function DoodleDuelClient() {
                 )
             ) : (
                 <>
-                    <div className={cn("w-full max-w-2xl", isCanvasFullscreen && "pt-4")}>
+                    <div className={cn("w-full max-w-2xl flex-shrink-0", isCanvasFullscreen && "pt-4")}>
                          <div className="text-center text-lg font-semibold text-muted-foreground mb-1">
                             {gameState.currentRound > 0 && `Round ${gameState.currentRound} / ${gameState.gameSettings.totalRounds}`}
                         </div>
@@ -971,6 +1006,11 @@ export default function DoodleDuelClient() {
                     {isDrawer && <Toolbar color={currentColor} setColor={setCurrentColor} lineWidth={currentLineWidth} setLineWidth={setCurrentLineWidth} onUndo={handleUndo} onClear={handleClear} disabled={!isDrawer} />}
                 </>
             )}
+        </div>
+        <div className={cn("w-full md:w-1/4 flex flex-col gap-4 min-h-0", isCanvasFullscreen && "hidden")}>
+          <RoomInfo roomId={roomId} toast={toast} />
+          <Scoreboard players={gameState.players} currentPlayerId={socket?.id ?? null} />
+          <ChatBox messages={gameState.messages} onSendMessage={handleGuess} disabled={isDrawer || (me?.hasGuessed ?? false) || me?.disconnected === true} />
         </div>
       </main>
       <Toaster />

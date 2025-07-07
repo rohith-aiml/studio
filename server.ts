@@ -446,7 +446,7 @@ app.prepare().then(() => {
         const room = gameRooms.get(currentRoomId);
         if (room && socket.id === room.gameState.drawerId) {
             room.gameState.drawingHistory.push(path);
-            socket.to(currentRoomId).emit("drawingUpdate", room.gameState.drawingHistory);
+            socket.to(currentRoomId).emit("pathStarted", path);
         }
     });
 
@@ -455,7 +455,7 @@ app.prepare().then(() => {
         const room = gameRooms.get(currentRoomId);
         if (room && socket.id === room.gameState.drawerId && room.gameState.drawingHistory.length > 0) {
             room.gameState.drawingHistory[room.gameState.drawingHistory.length - 1] = path;
-            socket.to(currentRoomId).emit("drawingUpdate", room.gameState.drawingHistory);
+            socket.to(currentRoomId).emit("pathUpdated", path);
         }
     });
     
@@ -464,7 +464,7 @@ app.prepare().then(() => {
         const room = gameRooms.get(currentRoomId);
         if (room && socket.id === room.gameState.drawerId) {
             room.gameState.drawingHistory.pop();
-            io.to(currentRoomId).emit("drawingUpdate", room.gameState.drawingHistory);
+            io.to(currentRoomId).emit("drawingUndone");
         }
     });
 
@@ -473,7 +473,7 @@ app.prepare().then(() => {
         const room = gameRooms.get(currentRoomId);
         if (room && socket.id === room.gameState.drawerId) {
             room.gameState.drawingHistory = [];
-            io.to(currentRoomId).emit("drawingUpdate", room.gameState.drawingHistory);
+            io.to(currentRoomId).emit("canvasCleared");
         }
     });
 
