@@ -34,6 +34,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { io, Socket } from "socket.io-client";
 import type { AnalyzeDrawingHistoryOutput } from "@/ai/flows/skip-vote-trigger";
 import { Toaster } from "./ui/toaster";
+import Confetti from "react-confetti";
 
 // --- TYPES ---
 type Player = {
@@ -490,9 +491,37 @@ const ChatBox = ({ messages, onSendMessage, disabled }: { messages: Message[], o
 const GameOverScreen = ({ players, ownerId, currentSocketId, onPlayAgain }: { players: Player[]; ownerId: string | null; currentSocketId: string | null; onPlayAgain: () => void; }) => {
     const winners = [...players].sort((a, b) => b.score - a.score);
     const topThree = winners.slice(0, 3);
+    const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
+    const [showConfetti, setShowConfetti] = useState(false);
+
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            setDimensions({
+                width: window.innerWidth,
+                height: window.innerHeight,
+            });
+        }
+        const timer = setTimeout(() => setShowConfetti(true), 500);
+        return () => clearTimeout(timer);
+    }, []);
 
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-background text-center p-4 overflow-hidden">
+        {showConfetti && dimensions.width > 0 && (
+            <Confetti
+                width={dimensions.width}
+                height={dimensions.height}
+                numberOfPieces={400}
+                recycle={false}
+                gravity={0.12}
+                onConfettiComplete={(confetti) => {
+                    setShowConfetti(false);
+                    if (confetti) {
+                        confetti.reset();
+                    }
+                }}
+            />
+        )}
         <h1 className="text-6xl font-bold text-primary mb-4 font-headline animate-bounce">
           Game Over!
         </h1>
