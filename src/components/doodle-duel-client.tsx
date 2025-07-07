@@ -297,7 +297,7 @@ const WordDisplay = ({ maskedWord, isDrawing, fullWord }: { maskedWord: string; 
           {isDrawing ? "You are drawing:" : "Guess the word!"}
         </p>
         <div className="flex items-center justify-center gap-2">
-            <p className="text-xl md:text-3xl font-bold tracking-widest font-headline text-primary transition-all duration-300">
+            <p className="text-lg md:text-2xl font-bold tracking-widest font-headline text-primary transition-all duration-300">
               {isDrawing ? (isWordVisible ? fullWord : '*'.repeat(fullWord.length).split('').join(' ')) : maskedWord}
             </p>
             {isDrawing && fullWord && (
@@ -914,7 +914,7 @@ export default function DoodleDuelClient() {
           isCanvasFullscreen && "fixed inset-0 z-50 p-4"
         )}>
         <div ref={canvasAreaRef} onClick={handleCanvasAreaClick} className={cn(
-            "flex flex-col h-[60%] md:h-full md:flex-1 min-h-0 items-center justify-center gap-2", 
+            "flex flex-col h-[70%] md:h-full md:flex-1 min-h-0 items-center justify-center gap-2", 
             isDrawer && "touch-none"
         )}>
             {isCanvasFullscreen && (
@@ -970,7 +970,7 @@ export default function DoodleDuelClient() {
                 </>
             )}
         </div>
-        <div className={cn("w-full md:w-[320px] lg:w-[350px] flex flex-col gap-4 min-h-0 h-[40%] md:h-full", isCanvasFullscreen ? "hidden" : "flex")}>
+        <div className={cn("w-full md:w-[320px] lg:w-[350px] flex flex-col gap-4 min-h-0 h-[30%] md:h-full", isCanvasFullscreen ? "hidden" : "flex")}>
           <RoomInfo roomId={roomId} toast={toast} />
           
           <div className="hidden md:flex flex-col gap-4 flex-1 min-h-0">
