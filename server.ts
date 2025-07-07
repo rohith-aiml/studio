@@ -62,6 +62,35 @@ type RoomState = {
     hintInterval: NodeJS.Timeout | null;
 }
 
+const levenshteinDistance = (a: string, b: string): number => {
+    if (a.length === 0) return b.length;
+    if (b.length === 0) return a.length;
+
+    const matrix = Array(b.length + 1).fill(null).map(() => Array(a.length + 1).fill(null));
+
+    for (let i = 0; i <= a.length; i++) {
+        matrix[0][i] = i;
+    }
+
+    for (let j = 0; j <= b.length; j++) {
+        matrix[j][0] = j;
+    }
+
+    for (let j = 1; j <= b.length; j++) {
+        for (let i = 1; i <= a.length; i++) {
+            const cost = a[i - 1].toLowerCase() === b[j - 1].toLowerCase() ? 0 : 1;
+            matrix[j][i] = Math.min(
+                matrix[j][i - 1] + 1, // deletion
+                matrix[j - 1][i] + 1, // insertion
+                matrix[j - 1][i - 1] + cost, // substitution
+            );
+        }
+    }
+
+    return matrix[b.length][a.length];
+};
+
+
 app.prepare().then(() => {
   const expressApp = express();
   const httpServer = createServer(expressApp);
@@ -381,7 +410,10 @@ app.prepare().then(() => {
         const player = room.gameState.players.find(p => p.id === socket.id);
         if (!player || player.isDrawing || player.hasGuessed) return;
 
-        const isCorrect = text.toLowerCase() === room.gameState.currentWord.toLowerCase();
+        const normalizedGuess = text.trim().toLowerCase();
+        const normalizedWord = room.gameState.currentWord.trim().toLowerCase();
+        const isCorrect = normalizedGuess === normalizedWord;
+
         room.gameState.messages.push({ playerName: player.name, text, isCorrect });
 
         if(isCorrect) {
@@ -395,6 +427,15 @@ app.prepare().then(() => {
             const allGuessed = room.gameState.players.filter(p => !p.isDrawing && !p.disconnected).every(p => p.hasGuessed);
             if (allGuessed) {
                 endRound(currentRoomId, true);
+            }
+        } else {
+            if (room.gameState.isRoundActive && room.gameState.currentWord) {
+                const distance = levenshteinDistance(normalizedGuess, normalizedWord);
+                if (distance === 1) {
+                    socket.emit('closeGuess', "One letter unmatched");
+                } else if (distance === 2) {
+                    socket.emit('closeGuess', "You're close.");
+                }
             }
         }
         broadcastGameState(currentRoomId);

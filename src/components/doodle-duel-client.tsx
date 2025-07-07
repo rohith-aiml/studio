@@ -27,6 +27,7 @@ import {
   EyeOff,
   PartyPopper,
   Pencil,
+  Sparkles,
   Trophy,
   Undo,
   Users,
@@ -738,6 +739,19 @@ export default function DoodleDuelClient() {
         });
     });
 
+    socket.on("closeGuess", (message: string) => {
+        toast({
+            title: "Hint",
+            description: (
+                <div className="flex items-center gap-2">
+                    <Sparkles className="text-yellow-400" />
+                    <span>{message}</span>
+                </div>
+            ),
+            duration: 3000,
+        });
+    });
+
 
     socket.on("error", (message: string) => {
         toast({ title: "Error", description: message, variant: "destructive" });
@@ -760,6 +774,7 @@ export default function DoodleDuelClient() {
         socket.off("promptWordChoice");
         socket.off("roundEnd");
         socket.off("aiSuggestion");
+        socket.off("closeGuess");
         socket.off("error");
     };
 
