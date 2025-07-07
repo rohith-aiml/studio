@@ -17,6 +17,7 @@ const port = process.env.PORT || 9002;
 type Player = {
   id: string; // socket.id
   name: string;
+  avatarUrl: string;
   score: number;
   isDrawing: boolean;
   hasGuessed: boolean;
@@ -197,12 +198,12 @@ app.prepare().then(() => {
     console.log(`Socket connected: ${socket.id}`);
     let currentRoomId: string | null = null;
 
-    socket.on("createRoom", (name: string) => {
+    socket.on("createRoom", ({ name, avatarUrl }: { name: string, avatarUrl: string }) => {
         const roomId = generateRoomId();
         currentRoomId = roomId;
         socket.join(roomId);
 
-        const player: Player = { id: socket.id, name, score: 0, isDrawing: true, hasGuessed: true };
+        const player: Player = { id: socket.id, name, avatarUrl, score: 0, isDrawing: true, hasGuessed: true };
 
         const newGameState: GameState = {
             players: [player],
@@ -216,7 +217,7 @@ app.prepare().then(() => {
         broadcastGameState(roomId);
     });
 
-    socket.on("joinRoom", (name: string, roomId: string) => {
+    socket.on("joinRoom", ({ name, avatarUrl, roomId }: { name: string, avatarUrl: string, roomId: string }) => {
         const room = gameRooms.get(roomId);
         if (!room) {
             socket.emit("error", "Room not found. Please check the ID or create a new game.");
@@ -231,7 +232,7 @@ app.prepare().then(() => {
         currentRoomId = roomId;
         socket.join(roomId);
         
-        const player: Player = { id: socket.id, name, score: 0, isDrawing: false, hasGuessed: false };
+        const player: Player = { id: socket.id, name, avatarUrl, score: 0, isDrawing: false, hasGuessed: false };
         room.gameState.players.push(player);
         room.gameState.messages.push({ playerName: "System", text: `${player.name} has joined the game.`, isCorrect: false });
         

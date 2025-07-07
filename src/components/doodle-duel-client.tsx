@@ -5,6 +5,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -34,6 +35,7 @@ import type { AnalyzeDrawingHistoryOutput } from "@/ai/flows/skip-vote-trigger";
 type Player = {
   id: string;
   name: string;
+  avatarUrl: string;
   score: number;
   isDrawing: boolean;
   hasGuessed: boolean;
@@ -70,11 +72,23 @@ const DRAWING_COLORS = [
   "#000000", "#ef4444", "#fb923c", "#facc15", "#4ade80", "#22d3ee", "#3b82f6", "#a78bfa", "#f472b6", "#ffffff",
 ];
 const BRUSH_SIZES = [2, 5, 10, 20];
+const AVATARS = [
+    { url: 'https://placehold.co/80x80.png', hint: 'boy avatar' },
+    { url: 'https://placehold.co/80x80.png', hint: 'man cartoon' },
+    { url: 'https://placehold.co/80x80.png', hint: 'boy character' },
+    { url: 'https://placehold.co/80x80.png', hint: 'male face' },
+    { url: 'https://placehold.co/80x80.png', hint: 'girl avatar' },
+    { url: 'https://placehold.co/80x80.png', hint: 'woman cartoon' },
+    { url: 'https://placehold.co/80x80.png', hint: 'girl character' },
+    { url: 'https://placehold.co/80x80.png', hint: 'female face' },
+];
+
 
 // --- SUB-COMPONENTS ---
 
-const JoinScreen = ({ onJoin }: { onJoin: (name: string) => void }) => {
+const JoinScreen = ({ onJoin }: { onJoin: (name: string, avatarUrl: string) => void }) => {
   const [name, setName] = useState("");
+  const [selectedAvatar, setSelectedAvatar] = useState(AVATARS[0]);
   const [roomIdFromUrl, setRoomIdFromUrl] = useState<string | null>(null);
 
   useEffect(() => {
@@ -86,27 +100,53 @@ const JoinScreen = ({ onJoin }: { onJoin: (name: string) => void }) => {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (name.trim()) {
-      onJoin(name.trim());
+      onJoin(name.trim(), selectedAvatar.url);
     }
   };
 
   return (
     <div className="flex items-center justify-center min-h-screen bg-background">
-      <Card className="w-full max-w-sm shadow-2xl">
+      <Card className="w-full max-w-md shadow-2xl">
         <CardHeader>
           <CardTitle className="text-3xl font-bold text-center text-primary font-headline">
             Doodle Duel
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <Input
-              placeholder="Enter your nickname"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="text-center text-lg h-12"
-              maxLength={15}
-            />
+          <form onSubmit={handleSubmit} className="space-y-6">
+            <div className="space-y-2">
+                <Label htmlFor="nickname">Enter your nickname</Label>
+                <Input
+                  id="nickname"
+                  placeholder="Your cool name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="text-center text-lg h-12"
+                  maxLength={15}
+                  required
+                />
+            </div>
+            <div className="space-y-3">
+                <Label>Choose your Avatar</Label>
+                <div className="grid grid-cols-4 gap-4">
+                    {AVATARS.map((avatar, index) => (
+                        <button
+                            key={index}
+                            type="button"
+                            onClick={() => setSelectedAvatar(avatar)}
+                            className={cn(
+                                "rounded-full ring-2 ring-offset-2 ring-offset-background transition-all aspect-square flex items-center justify-center",
+                                selectedAvatar.url === avatar.url && selectedAvatar.hint === avatar.hint ? "ring-primary" : "ring-transparent hover:ring-primary/50"
+                            )}
+                        >
+                            <Avatar className="w-full h-full">
+                                <AvatarImage src={avatar.url} data-ai-hint={avatar.hint} />
+                                <AvatarFallback>{avatar.hint.charAt(0).toUpperCase()}</AvatarFallback>
+                            </Avatar>
+                        </button>
+                    ))}
+                </div>
+            </div>
             <Button type="submit" className="w-full h-12 text-lg">
               {roomIdFromUrl ? `Join Game: ${roomIdFromUrl}` : "Create New Game"}
             </Button>
@@ -116,6 +156,7 @@ const JoinScreen = ({ onJoin }: { onJoin: (name: string) => void }) => {
     </div>
   );
 };
+
 
 const RoomInfo = ({ roomId, toast }: { roomId: string | null; toast: any }) => {
     if (!roomId) return null;
@@ -170,7 +211,7 @@ const Scoreboard = ({ players, currentPlayerId }: { players: Player[]; currentPl
           <li key={p.id} className={cn("flex items-center justify-between p-2 rounded-lg transition-all", p.id === currentPlayerId && "bg-accent/50")}>
             <div className="flex items-center gap-3">
               <Avatar>
-                <AvatarImage src={`https://placehold.co/40x40.png?text=${p.name.charAt(0)}`} data-ai-hint="avatar person" />
+                <AvatarImage src={p.avatarUrl} />
                 <AvatarFallback>{p.name.charAt(0)}</AvatarFallback>
               </Avatar>
               <span className="font-medium">{p.name}</span>
@@ -553,15 +594,15 @@ export default function DoodleDuelClient() {
 
   // --- Callbacks & Handlers ---
 
-  const handleJoin = (newName: string) => {
+  const handleJoin = (newName: string, avatarUrl: string) => {
     setName(newName);
     const params = new URLSearchParams(window.location.search);
     const roomIdFromUrl = params.get('roomId');
 
     if (roomIdFromUrl) {
-        socket?.emit("joinRoom", newName, roomIdFromUrl);
+        socket?.emit("joinRoom", { name: newName, avatarUrl, roomId: roomIdFromUrl });
     } else {
-        socket?.emit("createRoom", newName);
+        socket?.emit("createRoom", { name: newName, avatarUrl });
     }
   };
 
