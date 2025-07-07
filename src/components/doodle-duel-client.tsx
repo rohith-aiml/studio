@@ -680,6 +680,9 @@ export default function DoodleDuelClient() {
   useEffect(() => {
     if (!socket) return;
     
+    // Cleanup previous listeners to avoid duplicates
+    socket.off();
+
     const onConnect = () => console.log("Connected to server!");
     const onRoomCreated = (newRoomId: string) => {
         setRoomId(newRoomId);
@@ -882,13 +885,16 @@ export default function DoodleDuelClient() {
                           <CardTitle className="text-2xl mb-2">Lobby</CardTitle>
                       </CardHeader>
                       <CardContent className="space-y-4">
-                          <div className="space-y-2">
+                           <div className="space-y-2">
                               <p className="text-sm text-muted-foreground">Invite friends with this link or room ID</p>
-                              <div className="flex items-center justify-center gap-2 p-2 rounded-lg bg-muted/50">
-                                  <span className="text-xl font-bold tracking-widest text-primary">{roomId}</span>
-                                  <Button onClick={copyInvite} size="icon" variant="ghost">
-                                      <ClipboardCopy className="w-5 h-5" />
-                                      <span className="sr-only">Copy Link</span>
+                              <div className="flex items-center justify-between gap-4 p-2 rounded-lg bg-muted/50">
+                                  <div className="flex items-baseline gap-2">
+                                    <span className="text-sm font-medium text-muted-foreground">ID:</span>
+                                    <span className="text-xl font-bold tracking-widest text-primary">{roomId}</span>
+                                  </div>
+                                  <Button onClick={copyInvite} size="sm" variant="outline">
+                                      <ClipboardCopy className="w-4 h-4 mr-2" />
+                                      Copy Link
                                   </Button>
                               </div>
                           </div>
@@ -955,10 +961,6 @@ export default function DoodleDuelClient() {
             </div>
             <WordDisplay maskedWord={gameState.currentWord} isDrawing={isDrawer} fullWord={fullWord} />
             <div className="flex items-center justify-end gap-2 w-1/4">
-              <div className="text-sm hidden md:block">
-                  <span className="text-muted-foreground">Room </span>
-                  <span className="font-bold text-primary">{roomId}</span>
-              </div>
               <Button onClick={copyInvite} size="sm" variant="outline">
                   <ClipboardCopy className="w-4 h-4 md:mr-2" />
                   <span className="hidden md:inline">Copy Link</span>
@@ -974,7 +976,7 @@ export default function DoodleDuelClient() {
             </div>
 
             {/* Center Column: Canvas */}
-            <div className="flex flex-col min-h-0 gap-2 order-first md:order-none h-3/5 md:h-auto md:flex-1">
+            <div className="flex flex-col min-h-0 gap-2 order-first md:order-none h-[60%] md:h-auto md:flex-1">
               <div className="relative w-full flex-1 flex items-center justify-center min-h-0">
                   <div className="relative w-full h-full">
                     <DrawingCanvas ref={canvasRef} onDrawStart={handleStartPath} onDrawing={handleDrawPath} isDrawingPlayer={isDrawer} drawingHistory={gameState.drawingHistory}/>
@@ -984,7 +986,7 @@ export default function DoodleDuelClient() {
             </div>
 
             {/* Right Column: Chat (Desktop) / Tabs (Mobile) */}
-            <div className="w-full md:w-[320px] lg:w-[350px] flex flex-col min-h-0 flex-1 md:flex-initial">
+            <div className="w-full md:w-[320px] lg:w-[350px] flex flex-col min-h-0 flex-1 md:flex-initial h-[40%] md:h-auto">
               <div className="hidden md:flex flex-col h-full">
                 <ChatBox messages={gameState.messages} onSendMessage={handleGuess} disabled={isDrawer || (me?.hasGuessed ?? false) || me?.disconnected === true} />
               </div>
@@ -1013,4 +1015,3 @@ export default function DoodleDuelClient() {
     </>
   );
 }
-
