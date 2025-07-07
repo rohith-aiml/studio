@@ -464,7 +464,7 @@ const ChatBox = ({ messages, onSendMessage, disabled }: { messages: Message[], o
             <CardContent className="flex-grow overflow-y-auto pr-2 space-y-2">
                 {messages.map((msg, i) => (
                     <div key={i} className={cn("p-2 rounded-lg", msg.isCorrect ? "bg-green-100 dark:bg-green-900" : "bg-muted/50")}>
-                        <span className="font-bold text-primary">{msg.playerName}: </span>
+                        <span className="font-bold text-primary">{msg.playerName}: </span> 
                         {msg.isCorrect ? <span className="text-green-600 dark:text-green-400 font-medium">{msg.text}</span> : <span>{msg.text}</span>}
                     </div>
                 ))}
@@ -814,30 +814,44 @@ export default function DoodleDuelClient() {
         </div>
         <div className="w-full md:w-3/4 flex flex-col items-center justify-center gap-2">
             {!gameState.isRoundActive && roomId ? (
-                <Card className="p-8 text-center">
-                    <CardTitle className="text-2xl mb-2">Lobby</CardTitle>
-                    <CardContent className="space-y-4">
-                        <p className="text-muted-foreground">{activePlayers.length} / 8 players</p>
-                        {isOwner && activePlayers.length >= 2 && (
-                            <div className="flex flex-col gap-4 items-center">
-                                <div className="flex items-center gap-2">
-                                    <Label htmlFor="rounds">Rounds:</Label>
-                                    <Select onValueChange={(value) => setSelectedRounds(parseInt(value, 10))} defaultValue={String(selectedRounds)}>
-                                        <SelectTrigger id="rounds" className="w-24">
-                                            <SelectValue placeholder="Rounds" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            {ROUND_OPTIONS.map(r => <SelectItem key={r} value={String(r)}>{r}</SelectItem>)}
-                                        </SelectContent>
-                                    </Select>
+                gameState.currentRound === 0 ? (
+                    <Card className="p-8 text-center">
+                        <CardTitle className="text-2xl mb-2">Lobby</CardTitle>
+                        <CardContent className="space-y-4">
+                            <p className="text-muted-foreground">{activePlayers.length} / 8 players</p>
+                            {isOwner && activePlayers.length >= 2 && (
+                                <div className="flex flex-col gap-4 items-center">
+                                    <div className="flex items-center gap-2">
+                                        <Label htmlFor="rounds">Rounds:</Label>
+                                        <Select onValueChange={(value) => setSelectedRounds(parseInt(value, 10))} defaultValue={String(selectedRounds)}>
+                                            <SelectTrigger id="rounds" className="w-24">
+                                                <SelectValue placeholder="Rounds" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {ROUND_OPTIONS.map(r => <SelectItem key={r} value={String(r)}>{r}</SelectItem>)}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                    <Button onClick={handleStartGame} size="lg">Start Game</Button>
                                 </div>
-                                <Button onClick={handleStartGame} size="lg">Start Game</Button>
-                            </div>
-                        )}
-                        {isOwner && activePlayers.length < 2 && <p className="mt-4 text-sm text-muted-foreground">You need at least 2 players to start.</p>}
-                        {!isOwner && <p className="mt-4 text-sm text-muted-foreground">Waiting for {gameState.players.find(p => p.id === gameState.ownerId)?.name || 'the host'} to start the game.</p>}
-                    </CardContent>
-                </Card>
+                            )}
+                            {isOwner && activePlayers.length < 2 && <p className="mt-4 text-sm text-muted-foreground">You need at least 2 players to start.</p>}
+                            {!isOwner && <p className="mt-4 text-sm text-muted-foreground">Waiting for {gameState.players.find(p => p.id === gameState.ownerId)?.name || 'the host'} to start the game.</p>}
+                        </CardContent>
+                    </Card>
+                ) : (
+                    <Card className="p-8 text-center animate-pulse">
+                        <CardTitle className="text-2xl mb-2">Next round is starting!</CardTitle>
+                        <CardContent className="space-y-4">
+                            <p className="text-lg text-muted-foreground">
+                                {isDrawer 
+                                    ? "You are choosing a word..." 
+                                    : `${gameState.players.find(p => p.id === gameState.drawerId)?.name || 'Someone'} is choosing a word...`
+                                }
+                            </p>
+                        </CardContent>
+                    </Card>
+                )
             ) : (
                 <>
                     <div className="w-full max-w-2xl">
@@ -863,3 +877,5 @@ export default function DoodleDuelClient() {
     </>
   );
 }
+
+    
