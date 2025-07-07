@@ -125,11 +125,11 @@ app.prepare().then(() => {
     if (room.hintInterval) clearInterval(room.hintInterval);
 
     room.gameState.drawingHistory = [];
-    room.gameState.messages = [{ playerName: "System", text: `${newDrawer.name} is now drawing!`, isCorrect: false }];
-    room.gameState.currentWord = words[Math.floor(Math.random() * words.length)];
+    room.gameState.messages = [{ playerName: "System", text: `${newDrawer.name} is choosing a word...`, isCorrect: false }];
+    room.gameState.currentWord = "";
     room.gameState.revealedIndices = [];
     room.gameState.roundTimer = 90;
-    room.gameState.isRoundActive = true;
+    room.gameState.isRoundActive = false;
     room.gameState.drawerId = newDrawer.id;
     room.gameState.players = room.gameState.players.map(p => ({
         ...p,
@@ -137,10 +137,15 @@ app.prepare().then(() => {
         hasGuessed: p.id === newDrawer.id,
     }));
     
-    room.roundInterval = setInterval(() => gameTick(roomId), 1000);
+    const wordChoices: string[] = [];
+    const wordsCopy = [...words];
+    for (let i = 0; i < 4 && wordsCopy.length > 0; i++) {
+        const randomIndex = Math.floor(Math.random() * wordsCopy.length);
+        wordChoices.push(wordsCopy.splice(randomIndex, 1)[0]);
+    }
 
     broadcastGameState(roomId);
-    broadcastFullWordToDrawer(roomId);
+    io.to(newDrawer.id).emit("promptWordChoice", wordChoices);
   };
   
   const gameTick = (roomId: string) => {
@@ -245,6 +250,26 @@ app.prepare().then(() => {
         if (room && socket.id === room.gameState.drawerId && !room.gameState.isRoundActive) {
             startRound(currentRoomId);
         }
+    });
+
+    socket.on("wordChosen", (word: string) => {
+        if (!currentRoomId) return;
+        const room = gameRooms.get(currentRoomId);
+        if (!room || socket.id !== room.gameState.drawerId || room.gameState.isRoundActive) return;
+
+        const drawer = room.gameState.players.find(p => p.id === socket.id);
+        if (!drawer) return;
+
+        room.gameState.currentWord = word;
+        room.gameState.isRoundActive = true;
+        
+        room.gameState.messages.pop(); // Remove "is choosing..."
+        room.gameState.messages.push({ playerName: "System", text: `${drawer.name} is now drawing!`, isCorrect: false });
+        
+        room.roundInterval = setInterval(() => gameTick(currentRoomId), 1000);
+
+        broadcastGameState(currentRoomId);
+        broadcastFullWordToDrawer(currentRoomId);
     });
 
     socket.on("sendMessage", (text: string) => {

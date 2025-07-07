@@ -4,6 +4,13 @@
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
@@ -21,15 +28,10 @@ import {
   Users,
   Vote,
 } from "lucide-react";
-import React, {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
-import { Toaster } from "./ui/toaster";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { io, Socket } from "socket.io-client";
 import type { AnalyzeDrawingHistoryOutput } from "@/ai/flows/skip-vote-trigger";
+import { Toaster } from "./ui/toaster";
 
 // --- TYPES ---
 type Player = {
@@ -467,6 +469,7 @@ export default function DoodleDuelClient() {
       drawerId: null
   });
   const [fullWord, setFullWord] = useState("");
+  const [wordChoices, setWordChoices] = useState<string[]>([]);
 
   const [currentColor, setCurrentColor] = useState(DRAWING_COLORS[0]);
   const [currentLineWidth, setCurrentLineWidth] = useState(BRUSH_SIZES[1]);
@@ -507,6 +510,10 @@ export default function DoodleDuelClient() {
 
     socket.on("gameStateUpdate", (newGameState: GameState) => {
         setGameState(newGameState);
+        if (!newGameState.isRoundActive) {
+            setWordChoices([]);
+            setFullWord("");
+        }
     });
 
     socket.on("timerUpdate", (time: number) => {
@@ -521,9 +528,14 @@ export default function DoodleDuelClient() {
         setFullWord(word);
     });
 
+    socket.on("promptWordChoice", (choices: string[]) => {
+        setWordChoices(choices);
+    });
+
     socket.on("roundEnd", ({ word }: { word: string }) => {
         const player = gameState.players.find(p => p.id === socket.id);
         const wasCorrect = player?.hasGuessed;
+        setWordChoices([]);
 
         toast({
             title: wasCorrect ? "Round Over!" : "Time's Up!",
@@ -566,6 +578,7 @@ export default function DoodleDuelClient() {
         socket.off("timerUpdate");
         socket.off("drawingUpdate");
         socket.off("drawerWord");
+        socket.off("promptWordChoice");
         socket.off("roundEnd");
         socket.off("aiSuggestion");
         socket.off("error");
@@ -608,6 +621,12 @@ export default function DoodleDuelClient() {
 
   const handleStartGame = () => socket?.emit("startGame");
   const handleGuess = (guess: string) => socket?.emit("sendMessage", guess);
+  
+  const handleWordChoice = (word: string) => {
+    socket?.emit("wordChosen", word);
+    setWordChoices([]);
+  };
+
   const handleStartPath = (path: DrawingPath) => {
     socket?.emit("startPath", path);
     setGameState(prev => ({...prev, drawingHistory: [...prev.drawingHistory, path]}));
@@ -629,6 +648,29 @@ export default function DoodleDuelClient() {
 
   return (
     <>
+      <Dialog open={isDrawer && wordChoices.length > 0}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Choose a word to draw</DialogTitle>
+            <DialogDescription>
+              Select one of the words below. Only you can see them.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid grid-cols-2 gap-4 py-4">
+            {wordChoices.map((word) => (
+              <Button
+                key={word}
+                onClick={() => handleWordChoice(word)}
+                variant="outline"
+                className="h-12 text-base"
+              >
+                {word}
+              </Button>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <main className="flex flex-col md:flex-row h-screen bg-background p-4 gap-4 overflow-hidden">
         <div className="w-full md:w-1/4 flex flex-col gap-4">
           <RoomInfo roomId={roomId} toast={toast} />
