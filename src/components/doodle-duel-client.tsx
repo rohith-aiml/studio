@@ -14,6 +14,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import {
@@ -24,6 +25,7 @@ import {
   Eraser,
   PartyPopper,
   Pencil,
+  Trophy,
   Undo,
   Users,
   Vote,
@@ -57,19 +59,28 @@ type DrawingPath = {
   path: DrawingPoint[];
 };
 
+type GameSettings = {
+    totalRounds: number;
+};
+
 type GameState = {
   players: Player[];
   messages: Message[];
   drawingHistory: DrawingPath[];
   isRoundActive: boolean;
+  isGameOver: boolean;
   currentWord: string; // This will be the masked word
   roundTimer: number;
   drawerId: string | null;
+  ownerId: string | null;
+  gameSettings: GameSettings;
+  currentRound: number;
 };
 
 // --- CONSTANTS ---
 const ROUND_TIME = 90; // in seconds
 const AI_CHECK_INTERVAL = 15000; // 15 seconds
+const ROUND_OPTIONS = [1, 2, 3, 5, 10];
 
 const DRAWING_COLORS = [
   "#000000", "#ef4444", "#fb923c", "#facc15", "#4ade80", "#22d3ee", "#3b82f6", "#a78bfa", "#f472b6", "#ffffff",
@@ -476,6 +487,83 @@ const ChatBox = ({ messages, onSendMessage, disabled }: { messages: Message[], o
     );
 };
 
+const GameOverScreen = ({ players, ownerId, currentSocketId, onPlayAgain }: { players: Player[]; ownerId: string | null; currentSocketId: string | null; onPlayAgain: () => void; }) => {
+    const winners = [...players].sort((a, b) => b.score - a.score);
+    const topThree = winners.slice(0, 3);
+
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-background text-center p-4 overflow-hidden">
+        <h1 className="text-6xl font-bold text-primary mb-4 font-headline animate-bounce">
+          Game Over!
+        </h1>
+        <h2 className="text-3xl text-muted-foreground mb-8">Final Scores</h2>
+        <div className="flex flex-col md:flex-row gap-8 items-end justify-center">
+            {/* 2nd Place */}
+            {topThree.length > 1 && (
+                <Card className="w-64 border-4 border-slate-400 shadow-2xl animate-slide-up" style={{ animationDelay: '200ms' }}>
+                    <CardHeader className="p-4">
+                        <Trophy className="w-16 h-16 mx-auto text-slate-400" />
+                        <CardTitle className="text-4xl">2nd</CardTitle>
+                    </CardHeader>
+                    <CardContent className="p-4">
+                        <Avatar className="w-24 h-24 mx-auto mb-4">
+                            <AvatarImage src={topThree[1].avatarUrl} />
+                            <AvatarFallback className="text-5xl bg-card">{topThree[1].avatarUrl}</AvatarFallback>
+                        </Avatar>
+                        <p className="text-2xl font-bold">{topThree[1].name}</p>
+                        <p className="text-xl text-primary">{topThree[1].score} points</p>
+                    </CardContent>
+                </Card>
+            )}
+
+            {/* 1st Place */}
+            {topThree.length > 0 && (
+                <Card className="w-72 border-4 border-amber-400 shadow-2xl animate-slide-up order-first md:order-none">
+                     <CardHeader className="p-4">
+                        <Trophy className="w-20 h-20 mx-auto text-amber-400" />
+                        <CardTitle className="text-5xl">1st</CardTitle>
+                    </CardHeader>
+                    <CardContent className="p-4">
+                         <Avatar className="w-28 h-28 mx-auto mb-4">
+                            <AvatarImage src={topThree[0].avatarUrl} />
+                            <AvatarFallback className="text-6xl bg-card">{topThree[0].avatarUrl}</AvatarFallback>
+                        </Avatar>
+                        <p className="text-3xl font-bold">{topThree[0].name}</p>
+                        <p className="text-2xl text-primary">{topThree[0].score} points</p>
+                    </CardContent>
+                </Card>
+            )}
+
+            {/* 3rd Place */}
+            {topThree.length > 2 && (
+                 <Card className="w-64 border-4 border-amber-700 shadow-2xl animate-slide-up" style={{ animationDelay: '400ms' }}>
+                    <CardHeader className="p-4">
+                        <Trophy className="w-16 h-16 mx-auto text-amber-700" />
+                        <CardTitle className="text-4xl">3rd</CardTitle>
+                    </CardHeader>
+                    <CardContent className="p-4">
+                        <Avatar className="w-24 h-24 mx-auto mb-4">
+                            <AvatarImage src={topThree[2].avatarUrl} />
+                            <AvatarFallback className="text-5xl bg-card">{topThree[2].avatarUrl}</AvatarFallback>
+                        </Avatar>
+                        <p className="text-2xl font-bold">{topThree[2].name}</p>
+                        <p className="text-xl text-primary">{topThree[2].score} points</p>
+                    </CardContent>
+                </Card>
+            )}
+        </div>
+        <div className="mt-12">
+            {currentSocketId === ownerId ? (
+                <Button size="lg" onClick={onPlayAgain} className="text-lg h-12">Play Again</Button>
+            ) : (
+                <p className="text-lg text-muted-foreground">Waiting for the host to start a new game...</p>
+            )}
+        </div>
+      </div>
+    );
+};
+
+
 // --- MAIN COMPONENT ---
 export default function DoodleDuelClient() {
   const [socket, setSocket] = useState<Socket | null>(null);
@@ -487,9 +575,13 @@ export default function DoodleDuelClient() {
       messages: [],
       drawingHistory: [],
       isRoundActive: false,
+      isGameOver: false,
       currentWord: "",
       roundTimer: ROUND_TIME,
-      drawerId: null
+      drawerId: null,
+      ownerId: null,
+      gameSettings: { totalRounds: 3 },
+      currentRound: 0,
   });
   const [fullWord, setFullWord] = useState("");
   const [wordChoices, setWordChoices] = useState<string[]>([]);
@@ -497,11 +589,14 @@ export default function DoodleDuelClient() {
   const [currentColor, setCurrentColor] = useState(DRAWING_COLORS[0]);
   const [currentLineWidth, setCurrentLineWidth] = useState(BRUSH_SIZES[1]);
 
+  const [selectedRounds, setSelectedRounds] = useState(ROUND_OPTIONS[2]);
+
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const aiCheckIntervalRef = useRef<NodeJS.Timeout>();
   const { toast } = useToast();
 
   const me = gameState.players.find(p => p.id === socket?.id);
+  const isOwner = me?.id === gameState.ownerId;
   const isDrawer = me?.isDrawing ?? false;
 
   // --- Effects ---
@@ -647,8 +742,9 @@ export default function DoodleDuelClient() {
     }
   };
 
-  const handleStartGame = () => socket?.emit("startGame");
+  const handleStartGame = () => socket?.emit("startGame", { totalRounds: selectedRounds });
   const handleGuess = (guess: string) => socket?.emit("sendMessage", guess);
+  const handlePlayAgain = () => socket?.emit("playAgain");
   
   const handleWordChoice = (word: string) => {
     socket?.emit("wordChosen", word);
@@ -672,6 +768,15 @@ export default function DoodleDuelClient() {
 
   if (!name) {
     return <JoinScreen onJoin={handleJoin} />;
+  }
+  
+  if (gameState.isGameOver) {
+    return <GameOverScreen 
+        players={gameState.players} 
+        ownerId={gameState.ownerId} 
+        currentSocketId={socket?.id ?? null}
+        onPlayAgain={handlePlayAgain}
+    />;
   }
 
   const activePlayers = gameState.players.filter(p => !p.disconnected);
@@ -711,17 +816,34 @@ export default function DoodleDuelClient() {
             {!gameState.isRoundActive && roomId ? (
                 <Card className="p-8 text-center">
                     <CardTitle className="text-2xl mb-2">Lobby</CardTitle>
-                    <CardContent className="text-muted-foreground">
-                        <p>Waiting for players...</p>
-                        <p>{activePlayers.length} / 8 players</p>
+                    <CardContent className="space-y-4">
+                        <p className="text-muted-foreground">{activePlayers.length} / 8 players</p>
+                        {isOwner && activePlayers.length >= 2 && (
+                            <div className="flex flex-col gap-4 items-center">
+                                <div className="flex items-center gap-2">
+                                    <Label htmlFor="rounds">Rounds:</Label>
+                                    <Select onValueChange={(value) => setSelectedRounds(parseInt(value, 10))} defaultValue={String(selectedRounds)}>
+                                        <SelectTrigger id="rounds" className="w-24">
+                                            <SelectValue placeholder="Rounds" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {ROUND_OPTIONS.map(r => <SelectItem key={r} value={String(r)}>{r}</SelectItem>)}
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                                <Button onClick={handleStartGame} size="lg">Start Game</Button>
+                            </div>
+                        )}
+                        {isOwner && activePlayers.length < 2 && <p className="mt-4 text-sm text-muted-foreground">You need at least 2 players to start.</p>}
+                        {!isOwner && <p className="mt-4 text-sm text-muted-foreground">Waiting for {gameState.players.find(p => p.id === gameState.ownerId)?.name || 'the host'} to start the game.</p>}
                     </CardContent>
-                    {isDrawer && activePlayers.length >= 2 && <Button onClick={handleStartGame} size="lg">Start Round</Button>}
-                    {isDrawer && activePlayers.length < 2 && <p className="mt-4 text-sm">You need at least 2 players to start.</p>}
-                    {!isDrawer && <p className="mt-4 text-sm">Waiting for {gameState.players.find(p => p.isDrawing)?.name || 'the host'} to start the game.</p>}
                 </Card>
             ) : (
                 <>
                     <div className="w-full max-w-2xl">
+                         <div className="text-center text-lg font-semibold text-muted-foreground mb-1">
+                            {gameState.currentRound > 0 && `Round ${gameState.currentRound} / ${gameState.gameSettings.totalRounds}`}
+                        </div>
                         <Timer time={gameState.roundTimer} />
                         <WordDisplay maskedWord={gameState.currentWord} isDrawing={isDrawer} fullWord={fullWord} />
                     </div>

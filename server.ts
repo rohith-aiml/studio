@@ -37,15 +37,23 @@ type DrawingPath = {
   path: DrawingPoint[];
 };
 
+type GameSettings = {
+    totalRounds: number;
+};
+
 type GameState = {
-  players: Player[];
-  messages: Message[];
-  drawingHistory: DrawingPath[];
-  isRoundActive: boolean;
-  currentWord: string;
-  revealedIndices: number[];
-  roundTimer: number;
-  drawerId: string | null;
+    players: Player[];
+    messages: Message[];
+    drawingHistory: DrawingPath[];
+    isRoundActive: boolean;
+    isGameOver: boolean;
+    currentWord: string;
+    revealedIndices: number[];
+    roundTimer: number;
+    drawerId: string | null;
+    ownerId: string | null;
+    gameSettings: GameSettings;
+    currentRound: number;
 };
 
 type RoomState = {
@@ -119,8 +127,25 @@ app.prepare().then(() => {
     
     const currentDrawerIndex = activePlayers.findIndex(p => p.id === room.gameState.drawerId);
     const nextDrawerIndex = (currentDrawerIndex + 1) % activePlayers.length;
-    const newDrawer = activePlayers[nextDrawerIndex];
+
+    // A full cycle of drawers is complete, start a new round
+    if (nextDrawerIndex === 0) {
+        room.gameState.currentRound++;
+    }
+
+    if (room.gameState.currentRound > room.gameState.gameSettings.totalRounds) {
+        room.gameState.isGameOver = true;
+        room.gameState.isRoundActive = false;
+        if (room.roundInterval) clearInterval(room.roundInterval);
+        if (room.hintInterval) clearInterval(room.hintInterval);
+        room.roundInterval = null;
+        room.hintInterval = null;
+        room.gameState.messages.push({ playerName: "System", text: `Game Over! Check out the final scores!`, isCorrect: false });
+        broadcastGameState(roomId);
+        return;
+    }
     
+    const newDrawer = activePlayers[nextDrawerIndex];
     if (!newDrawer) return;
 
     if (room.roundInterval) clearInterval(room.roundInterval);
@@ -135,9 +160,11 @@ app.prepare().then(() => {
     room.gameState.drawerId = newDrawer.id;
     room.gameState.players.forEach(p => {
         p.isDrawing = p.id === newDrawer.id;
-        p.hasGuessed = p.id === newDrawer.id;
+        p.hasGuessed = false; // Reset guess status for everyone except drawer
     });
-    
+    const drawerPlayer = room.gameState.players.find(p => p.id === newDrawer.id);
+    if(drawerPlayer) drawerPlayer.hasGuessed = true;
+
     const wordChoices: string[] = [];
     const wordsCopy = [...words];
     for (let i = 0; i < 4 && wordsCopy.length > 0; i++) {
@@ -214,8 +241,16 @@ app.prepare().then(() => {
         const newGameState: GameState = {
             players: [player],
             messages: [{ playerName: "System", text: `${name} created the game.`, isCorrect: false }],
-            drawingHistory: [], isRoundActive: false, currentWord: "", revealedIndices: [],
-            roundTimer: 90, drawerId: player.id,
+            drawingHistory: [],
+            isRoundActive: false,
+            isGameOver: false,
+            currentWord: "",
+            revealedIndices: [],
+            roundTimer: 90,
+            drawerId: player.id,
+            ownerId: player.id,
+            gameSettings: { totalRounds: 3 },
+            currentRound: 0,
         };
 
         gameRooms.set(roomId, { gameState: newGameState, roundInterval: null, hintInterval: null });
@@ -252,23 +287,69 @@ app.prepare().then(() => {
         currentRoomId = roomId;
         socket.join(roomId);
         
-        if (!room.gameState.isRoundActive) {
-            const player = room.gameState.players.find(p => p.id === socket.id);
-            if (player) {
-                const isOnlyPlayer = room.gameState.players.filter(p => !p.disconnected).length === 1;
-                player.isDrawing = isOnlyPlayer;
-                player.hasGuessed = isOnlyPlayer;
+        const me = room.gameState.players.find(p => p.id === socket.id);
+        if (me && !room.gameState.isRoundActive) {
+            const isOnlyPlayer = room.gameState.players.filter(p => !p.disconnected).length === 1;
+            me.isDrawing = isOnlyPlayer;
+            me.hasGuessed = isOnlyPlayer;
+            if (isOnlyPlayer) {
+                room.gameState.ownerId = me.id;
+                room.gameState.drawerId = me.id;
             }
         }
         
         broadcastGameState(roomId);
     });
 
-    socket.on("startGame", () => {
+    socket.on("startGame", ({ totalRounds }: { totalRounds: number }) => {
         if (!currentRoomId) return;
         const room = gameRooms.get(currentRoomId);
-        if (room && socket.id === room.gameState.drawerId && !room.gameState.isRoundActive) {
+        if (room && socket.id === room.gameState.ownerId && !room.gameState.isRoundActive) {
+             const activePlayers = room.gameState.players.filter(p => !p.disconnected);
+            if (activePlayers.length < 2) {
+                socket.emit("error", "You need at least 2 players to start.");
+                return;
+            }
+            
+            room.gameState.gameSettings.totalRounds = totalRounds;
+            room.gameState.currentRound = 0; // Will be incremented to 1 in startRound
+            room.gameState.isGameOver = false;
+            room.gameState.players.forEach(p => { p.score = 0; });
+    
+            // Make the owner the first drawer by setting the "previous" drawer to be the last player
+            const ownerIndex = activePlayers.findIndex(p => p.id === socket.id);
+            if(ownerIndex > 0) {
+                const owner = activePlayers.splice(ownerIndex, 1)[0];
+                activePlayers.unshift(owner);
+                 room.gameState.players = room.gameState.players.map(p => activePlayers.find(ap => ap.id === p.id) || p).filter(Boolean);
+            }
+            
+            room.gameState.drawerId = activePlayers[activePlayers.length - 1].id;
+    
             startRound(currentRoomId);
+        }
+    });
+
+    socket.on("playAgain", () => {
+        if (!currentRoomId) return;
+        const room = gameRooms.get(currentRoomId);
+        if (room && socket.id === room.gameState.ownerId) {
+            room.gameState.isGameOver = false;
+            room.gameState.isRoundActive = false;
+            room.gameState.currentRound = 0;
+            const ownerName = room.gameState.players.find(p => p.id === socket.id)?.name || 'The host';
+            room.gameState.messages = [{ playerName: "System", text: `${ownerName} started a new game!`, isCorrect: false }];
+            room.gameState.drawingHistory = [];
+            room.gameState.drawerId = socket.id;
+            
+            room.gameState.players.forEach(p => {
+                p.score = 0;
+                const isOwner = p.id === socket.id;
+                p.isDrawing = isOwner;
+                p.hasGuessed = isOwner;
+            });
+
+            broadcastGameState(currentRoomId);
         }
     });
 
@@ -398,6 +479,11 @@ app.prepare().then(() => {
                 }, 300000); // 5 minutes
                 broadcastGameState(currentRoomId);
                 return;
+            }
+
+            if (socket.id === room.gameState.ownerId && activePlayers.length > 0) {
+                room.gameState.ownerId = activePlayers[0].id;
+                room.gameState.messages.push({ playerName: "System", text: `${activePlayers[0].name} is the new host.`, isCorrect: false });
             }
 
             if (socket.id === room.gameState.drawerId) {
