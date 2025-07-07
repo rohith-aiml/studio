@@ -195,49 +195,11 @@ const JoinScreen = ({ onJoin }: { onJoin: (name: string, avatarUrl: string, room
 };
 
 
-const RoomInfo = ({ roomId, toast }: { roomId: string | null; toast: any }) => {
-    if (!roomId) return null;
-
-    const inviteLink = `${window.location.origin}/?roomId=${roomId}`;
-
-    const copyToClipboard = () => {
-        navigator.clipboard.writeText(inviteLink).then(() => {
-            toast({
-                title: "Copied!",
-                description: "Invite link copied to clipboard.",
-            });
-        }).catch(err => {
-            console.error('Failed to copy: ', err);
-            toast({
-                title: "Error",
-                description: "Could not copy link to clipboard.",
-                variant: "destructive"
-            });
-        });
-    };
-
-    return (
-        <Card className="flex-shrink-0">
-             <CardContent className="p-3 flex items-center justify-between">
-                <div className="text-sm">
-                    <span className="text-muted-foreground">Room </span>
-                    <span className="font-bold text-primary">{roomId}</span>
-                </div>
-                <Button onClick={copyToClipboard} size="sm" variant="outline">
-                    <ClipboardCopy className="w-4 h-4 mr-2" />
-                    Copy Invite
-                </Button>
-            </CardContent>
-        </Card>
-    );
-};
-
-
 const Scoreboard = ({ players, currentPlayerId }: { players: Player[]; currentPlayerId: string | null; }) => (
   <Card className="h-full flex flex-col min-h-0">
-    <CardHeader className="p-3 md:p-6">
-      <CardTitle className="flex items-center gap-2 text-base md:text-2xl">
-        <Users className="text-primary" /> Scoreboard
+    <CardHeader className="p-4">
+      <CardTitle className="flex items-center gap-2 text-xl">
+        <Users className="text-primary" /> Players
       </CardTitle>
     </CardHeader>
     <CardContent className="flex-grow overflow-y-auto pr-2 space-y-2">
@@ -246,40 +208,30 @@ const Scoreboard = ({ players, currentPlayerId }: { players: Player[]; currentPl
           <li key={p.id || p.name} className={cn(
               "flex items-center justify-between p-2 rounded-lg transition-all", 
               p.id === currentPlayerId && "bg-accent/50",
-              p.disconnected && "opacity-50"
+              p.disconnected && "opacity-50",
+              p.hasGuessed && !p.isDrawing && "bg-green-500/20"
             )}>
             <div className="flex items-center gap-3">
-              <Avatar className="w-8 h-8 md:w-10 md:h-10">
+              <Avatar className="w-10 h-10">
                 <AvatarImage src={p.avatarUrl} />
-                <AvatarFallback className="text-xl md:text-2xl">
+                <AvatarFallback className="text-2xl">
                     {p.avatarUrl.startsWith('http') ? p.name.charAt(0) : p.avatarUrl}
                 </AvatarFallback>
               </Avatar>
               <div className="flex flex-col">
-                <span className="font-medium text-sm md:text-base">{p.name}</span>
+                <span className="font-medium text-base">{p.name}</span>
                 {p.disconnected && <span className="text-xs text-muted-foreground">(disconnected)</span>}
               </div>
               {p.isDrawing && <Pencil className="w-4 h-4 text-primary" />}
             </div>
             <div className="flex items-center gap-2">
-              <span className="font-bold text-base md:text-lg text-primary">{p.score}</span>
-              {p.hasGuessed && <Check className="w-5 h-5 text-green-500" />}
+              <span className="font-bold text-lg text-primary">{p.score}</span>
             </div>
           </li>
         ))}
       </ul>
     </CardContent>
   </Card>
-);
-
-const Timer = ({ time }: { time: number }) => (
-  <div className="w-full">
-    <div className="flex justify-center items-center gap-2 mb-1 text-lg font-bold text-primary">
-      <Clock className="w-5 h-5" />
-      <span>{time}</span>
-    </div>
-    <Progress value={(time / ROUND_TIME) * 100} className="h-2" />
-  </div>
 );
 
 const WordDisplay = ({ maskedWord, isDrawing, fullWord }: { maskedWord: string; isDrawing: boolean; fullWord: string; }) => {
@@ -446,7 +398,7 @@ const DrawingCanvas = React.forwardRef<HTMLCanvasElement, {
                 onTouchStart={startDrawing}
                 onTouchMove={draw}
                 onTouchEnd={stopDrawing}
-                className={cn("bg-white rounded-lg shadow-inner w-full h-full", isDrawingPlayer ? "cursor-crosshair" : "cursor-not-allowed")}
+                className={cn("bg-white rounded-lg shadow-inner w-full h-full", isDrawingPlayer ? "cursor-crosshair touch-none" : "cursor-not-allowed")}
             />
         );
     }
@@ -508,7 +460,7 @@ const ChatBox = ({ messages, onSendMessage, disabled }: { messages: Message[], o
     
     return (
         <Card className="flex-grow flex flex-col min-h-0 h-full">
-            <CardHeader className="p-3 md:p-6"><CardTitle className="text-base md:text-2xl">Chat & Guesses</CardTitle></CardHeader>
+            <CardHeader className="p-4"><CardTitle className="text-xl">Chat & Guesses</CardTitle></CardHeader>
             <CardContent className="flex-grow overflow-y-auto pr-2 space-y-2">
                 {messages.map((msg, i) => (
                     <div key={i} className={cn("p-2 rounded-lg text-sm md:text-base", msg.isCorrect ? "bg-green-100 dark:bg-green-900" : "bg-muted/50")}>
@@ -700,12 +652,8 @@ export default function DoodleDuelClient() {
 
   const [selectedRounds, setSelectedRounds] = useState(ROUND_OPTIONS[2]);
   
-  const [isCanvasFullscreen, setIsCanvasFullscreen] = useState(false);
-  const canvasAreaRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const aiCheckIntervalRef = useRef<NodeJS.Timeout>();
-  const tapCount = useRef(0);
-  const tapTimer = useRef<NodeJS.Timeout | null>(null);
   const notificationSoundRef = useRef<HTMLAudioElement>(null);
 
   const { toast } = useToast();
@@ -867,30 +815,24 @@ export default function DoodleDuelClient() {
   const handleDrawPath = useCallback((path: DrawingPath) => socket?.emit("drawPath", path), [socket]);
   const handleUndo = useCallback(() => socket?.emit("undo"), [socket]);
   const handleClear = useCallback(() => socket?.emit("clearCanvas"), [socket]);
-  const toggleFullscreen = () => setIsCanvasFullscreen(prev => !prev);
   
-  const handleCanvasAreaClick = (e: React.MouseEvent) => {
-    if ((e.target as HTMLElement).closest('button')) return;
-
-    tapCount.current += 1;
-    if (tapTimer.current) clearTimeout(tapTimer.current);
-
-    if (tapCount.current === 3) {
-      toggleFullscreen();
-      tapCount.current = 0;
-    } else {
-      tapTimer.current = setTimeout(() => {
-        tapCount.current = 0;
-      }, 400);
-    }
-  };
-
   if (!name) return <JoinScreen onJoin={handleJoin} />;
   if (gameState.isGameOver) {
     return <GameOverScreen players={gameState.players} ownerId={gameState.ownerId} currentSocketId={socket?.id ?? null} onPlayAgain={handlePlayAgain} />;
   }
 
   const activePlayers = gameState.players.filter(p => !p.disconnected);
+
+  const copyInvite = () => {
+    if (!roomId) return;
+    const inviteLink = `${window.location.origin}/?roomId=${roomId}`;
+    navigator.clipboard.writeText(inviteLink).then(() => {
+        toast({
+            title: "Copied!",
+            description: "Invite link copied to clipboard.",
+        });
+    });
+  }
 
   return (
     <>
@@ -908,92 +850,103 @@ export default function DoodleDuelClient() {
           </div>
         </DialogContent>
       </Dialog>
-
-      <main className={cn(
-          "flex flex-col md:flex-row h-dvh max-h-dvh overflow-hidden bg-background p-2 md:p-4 gap-4",
-          isCanvasFullscreen && "fixed inset-0 z-50 p-4"
-        )}>
-        <div ref={canvasAreaRef} onClick={handleCanvasAreaClick} className={cn(
-            "flex flex-col h-[70%] md:h-full md:flex-1 min-h-0 items-center justify-center gap-2", 
-            isDrawer && "touch-none"
-        )}>
-            {isCanvasFullscreen && (
-              <Button onClick={toggleFullscreen} variant="ghost" size="icon" className="absolute top-4 right-4 z-50 bg-background/50 hover:bg-background">
-                <X />
+      
+      <main className="flex h-dvh max-h-dvh flex-col overflow-hidden bg-background">
+      {!roomId || (!gameState.isRoundActive && !gameState.isGameOver) ? (
+          <div className="flex h-full w-full items-center justify-center p-4">
+              {gameState.currentRound === 0 ? (
+                  <Card className="p-8 text-center m-auto">
+                      <CardTitle className="text-2xl mb-2">Lobby</CardTitle>
+                      <CardContent className="space-y-4">
+                          <p className="text-muted-foreground">{activePlayers.length} / 8 players</p>
+                          {isOwner && activePlayers.length >= 2 && (
+                              <div className="flex flex-col gap-4 items-center">
+                                  <div className="flex items-center gap-2">
+                                      <Label htmlFor="rounds">Rounds:</Label>
+                                      <Select onValueChange={(value) => setSelectedRounds(parseInt(value, 10))} defaultValue={String(selectedRounds)}>
+                                          <SelectTrigger id="rounds" className="w-24"><SelectValue placeholder="Rounds" /></SelectTrigger>
+                                          <SelectContent>{ROUND_OPTIONS.map(r => <SelectItem key={r} value={String(r)}>{r}</SelectItem>)}</SelectContent>
+                                      </Select>
+                                  </div>
+                                  <Button onClick={handleStartGame} size="lg">Start Game</Button>
+                              </div>
+                          )}
+                          {isOwner && activePlayers.length < 2 && <p className="mt-4 text-sm text-muted-foreground">You need at least 2 players to start.</p>}
+                          {!isOwner && <p className="mt-4 text-sm text-muted-foreground">Waiting for {gameState.players.find(p => p.id === gameState.ownerId)?.name || 'the host'} to start the game.</p>}
+                      </CardContent>
+                  </Card>
+              ) : (
+                  <Card className="p-8 text-center m-auto animate-pulse">
+                      <CardTitle className="text-2xl mb-2">Next round is starting!</CardTitle>
+                      <CardContent className="space-y-4">
+                          <p className="text-lg text-muted-foreground">{isDrawer ? "You are choosing a word..." : `${gameState.players.find(p => p.id === gameState.drawerId)?.name || 'Someone'} is choosing a word...`}</p>
+                      </CardContent>
+                  </Card>
+              )}
+          </div>
+      ) : (
+        <div className="flex h-full flex-col p-2 md:p-4 gap-2 md:gap-4">
+          {/* Top Bar */}
+          <div className="flex items-center justify-between gap-4 flex-shrink-0 px-2">
+            <div className="flex items-center gap-2 text-lg font-bold text-primary">
+                <Clock className="w-5 h-5" />
+                <span>{gameState.roundTimer}</span>
+            </div>
+            <WordDisplay maskedWord={gameState.currentWord} isDrawing={isDrawer} fullWord={fullWord} />
+            <div className="flex items-center gap-2">
+              <div className="text-sm hidden md:block">
+                  <span className="text-muted-foreground">Room </span>
+                  <span className="font-bold text-primary">{roomId}</span>
+              </div>
+              <Button onClick={copyInvite} size="sm" variant="outline">
+                  <ClipboardCopy className="w-4 h-4 md:mr-2" />
+                  <span className="hidden md:inline">Copy Invite</span>
               </Button>
-            )}
-            {!roomId || (!gameState.isRoundActive && !gameState.isGameOver) ? (
-                <div className="w-full h-full flex items-center justify-center">
-                    {gameState.currentRound === 0 ? (
-                        <Card className="p-8 text-center m-auto">
-                            <CardTitle className="text-2xl mb-2">Lobby</CardTitle>
-                            <CardContent className="space-y-4">
-                                <p className="text-muted-foreground">{activePlayers.length} / 8 players</p>
-                                {isOwner && activePlayers.length >= 2 && (
-                                    <div className="flex flex-col gap-4 items-center">
-                                        <div className="flex items-center gap-2">
-                                            <Label htmlFor="rounds">Rounds:</Label>
-                                            <Select onValueChange={(value) => setSelectedRounds(parseInt(value, 10))} defaultValue={String(selectedRounds)}>
-                                                <SelectTrigger id="rounds" className="w-24"><SelectValue placeholder="Rounds" /></SelectTrigger>
-                                                <SelectContent>{ROUND_OPTIONS.map(r => <SelectItem key={r} value={String(r)}>{r}</SelectItem>)}</SelectContent>
-                                            </Select>
-                                        </div>
-                                        <Button onClick={handleStartGame} size="lg">Start Game</Button>
-                                    </div>
-                                )}
-                                {isOwner && activePlayers.length < 2 && <p className="mt-4 text-sm text-muted-foreground">You need at least 2 players to start.</p>}
-                                {!isOwner && <p className="mt-4 text-sm text-muted-foreground">Waiting for {gameState.players.find(p => p.id === gameState.ownerId)?.name || 'the host'} to start the game.</p>}
-                            </CardContent>
-                        </Card>
-                    ) : (
-                        <Card className="p-8 text-center m-auto animate-pulse">
-                            <CardTitle className="text-2xl mb-2">Next round is starting!</CardTitle>
-                            <CardContent className="space-y-4">
-                                <p className="text-lg text-muted-foreground">{isDrawer ? "You are choosing a word..." : `${gameState.players.find(p => p.id === gameState.drawerId)?.name || 'Someone'} is choosing a word...`}</p>
-                            </CardContent>
-                        </Card>
-                    )}
-                </div>
-            ) : (
-                <>
-                    <div className="w-full max-w-2xl flex-shrink-0">
-                        {gameState.currentRound > 0 && <div className="text-center text-xs font-semibold text-muted-foreground">{`Round ${gameState.currentRound} / ${gameState.gameSettings.totalRounds}`}</div>}
-                        <Timer time={gameState.roundTimer} />
-                        <WordDisplay maskedWord={gameState.currentWord} isDrawing={isDrawer} fullWord={fullWord} />
-                    </div>
-                    <div className="relative w-full flex-1 flex items-center justify-center min-h-0">
-                      <div className="relative aspect-[4/3] w-full h-full max-w-full max-h-full">
-                        <DrawingCanvas ref={canvasRef} onDrawStart={handleStartPath} onDrawing={handleDrawPath} isDrawingPlayer={isDrawer} drawingHistory={gameState.drawingHistory}/>
-                      </div>
-                    </div>
-                    {isDrawer && <Toolbar color={currentColor} setColor={setCurrentColor} lineWidth={currentLineWidth} setLineWidth={setCurrentLineWidth} onUndo={handleUndo} onClear={handleClear} disabled={!isDrawer} />}
-                </>
-            )}
-        </div>
-        <div className={cn("w-full md:w-[320px] lg:w-[350px] flex flex-col gap-4 min-h-0 h-[30%] md:h-full", isCanvasFullscreen ? "hidden" : "flex")}>
-          <RoomInfo roomId={roomId} toast={toast} />
+            </div>
+          </div>
           
-          <div className="hidden md:flex flex-col gap-4 flex-1 min-h-0">
-            <Scoreboard players={gameState.players} currentPlayerId={socket?.id ?? null} />
-            <ChatBox messages={gameState.messages} onSendMessage={handleGuess} disabled={isDrawer || (me?.hasGuessed ?? false) || me?.disconnected === true} />
-          </div>
+          {/* Main Content Area */}
+          <div className="flex-1 flex flex-col md:flex-row gap-4 min-h-0">
+            {/* Left Column: Scoreboard (Desktop) */}
+            <div className="w-full md:w-[280px] flex-shrink-0 hidden md:flex">
+                 <Scoreboard players={gameState.players} currentPlayerId={socket?.id ?? null} />
+            </div>
 
-          <div className="h-full md:hidden min-h-0">
-             <Tabs defaultValue="chat" className="flex flex-col h-full">
-                <TabsList className="grid w-full grid-cols-2">
-                  <TabsTrigger value="chat">Chat</TabsTrigger>
-                  <TabsTrigger value="scores">Scores</TabsTrigger>
-                </TabsList>
-                <TabsContent value="chat" className="mt-2 flex-1 min-h-0">
-                  <ChatBox messages={gameState.messages} onSendMessage={handleGuess} disabled={isDrawer || (me?.hasGuessed ?? false) || me?.disconnected === true} />
-                </TabsContent>
-                <TabsContent value="scores" className="mt-2 flex-1 min-h-0">
-                  <Scoreboard players={gameState.players} currentPlayerId={socket?.id ?? null} />
-                </TabsContent>
-            </Tabs>
+            {/* Center Column: Canvas */}
+            <div className="flex-1 flex flex-col min-h-0 gap-2 h-full md:h-auto order-first md:order-none">
+              <div className="relative w-full flex-1 flex items-center justify-center min-h-0">
+                  <div className="relative aspect-[16/9] w-full h-full max-w-full max-h-full">
+                    <DrawingCanvas ref={canvasRef} onDrawStart={handleStartPath} onDrawing={handleDrawPath} isDrawingPlayer={isDrawer} drawingHistory={gameState.drawingHistory}/>
+                  </div>
+              </div>
+              {isDrawer && <Toolbar color={currentColor} setColor={setCurrentColor} lineWidth={currentLineWidth} setLineWidth={setCurrentLineWidth} onUndo={handleUndo} onClear={handleClear} disabled={!isDrawer} />}
+            </div>
+
+            {/* Right Column: Chat (Desktop) / Tabs (Mobile) */}
+            <div className="w-full md:w-[320px] lg:w-[350px] flex flex-col gap-4 min-h-0 flex-1 md:flex-initial">
+              <div className="hidden md:flex flex-col h-full">
+                <ChatBox messages={gameState.messages} onSendMessage={handleGuess} disabled={isDrawer || (me?.hasGuessed ?? false) || me?.disconnected === true} />
+              </div>
+              <div className="h-full md:hidden min-h-0">
+                 <Tabs defaultValue="chat" className="flex flex-col h-full">
+                    <TabsList className="grid w-full grid-cols-2">
+                      <TabsTrigger value="chat">Chat</TabsTrigger>
+                      <TabsTrigger value="scores">Scores</TabsTrigger>
+                    </TabsList>
+                    <TabsContent value="chat" className="mt-2 flex-1 min-h-0">
+                      <ChatBox messages={gameState.messages} onSendMessage={handleGuess} disabled={isDrawer || (me?.hasGuessed ?? false) || me?.disconnected === true} />
+                    </TabsContent>
+                    <TabsContent value="scores" className="mt-2 flex-1 min-h-0">
+                      <Scoreboard players={gameState.players} currentPlayerId={socket?.id ?? null} />
+                    </TabsContent>
+                </Tabs>
+              </div>
+            </div>
           </div>
         </div>
+      )}
       </main>
+
       <audio ref={notificationSoundRef} src="/notification.mp3" preload="auto" className="hidden" />
       <Toaster />
     </>
