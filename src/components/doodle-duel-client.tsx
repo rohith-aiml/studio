@@ -76,14 +76,14 @@ const DRAWING_COLORS = [
 ];
 const BRUSH_SIZES = [2, 5, 10, 20];
 const AVATARS = [
-    { url: 'https://placehold.co/80x80/A9C2BD/FFFFFF.png', hint: 'boy avatar' },
-    { url: 'https://placehold.co/80x80/759FBC/FFFFFF.png', hint: 'man cartoon' },
-    { url: 'https://placehold.co/80x80/CAD2C5/FFFFFF.png', hint: 'boy character' },
-    { url: 'https://placehold.co/80x80/84A98C/FFFFFF.png', hint: 'male face' },
-    { url: 'https://placehold.co/80x80/F4A261/FFFFFF.png', hint: 'girl avatar' },
-    { url: 'https://placehold.co/80x80/E76F51/FFFFFF.png', hint: 'woman cartoon' },
-    { url: 'https://placehold.co/80x80/DDA15E/FFFFFF.png', hint: 'girl character' },
-    { url: 'https://placehold.co/80x80/BC6C25/FFFFFF.png', hint: 'female face' },
+    { url: '🧑‍🦱', hint: 'boy avatar' },
+    { url: '👨‍🦰', hint: 'man cartoon' },
+    { url: '👦', hint: 'boy character' },
+    { url: '👨‍🦳', hint: 'male face' },
+    { url: '👩‍🦱', hint: 'girl avatar' },
+    { url: '👧', hint: 'woman cartoon' },
+    { url: '👩‍🦰', hint: 'girl character' },
+    { url: '👩‍🦳', hint: 'female face' },
 ];
 
 
@@ -145,8 +145,8 @@ const JoinScreen = ({ onJoin }: { onJoin: (name: string, avatarUrl: string, room
                             )}
                         >
                             <Avatar className="w-full h-full">
-                                <AvatarImage src={avatar.url} data-ai-hint={avatar.hint} />
-                                <AvatarFallback>{avatar.hint.charAt(0).toUpperCase()}</AvatarFallback>
+                                <AvatarImage src={avatar.url} />
+                                <AvatarFallback className="text-4xl bg-card">{avatar.url}</AvatarFallback>
                             </Avatar>
                         </button>
                     ))}
@@ -232,7 +232,9 @@ const Scoreboard = ({ players, currentPlayerId }: { players: Player[]; currentPl
             <div className="flex items-center gap-3">
               <Avatar>
                 <AvatarImage src={p.avatarUrl} />
-                <AvatarFallback>{p.name.charAt(0)}</AvatarFallback>
+                <AvatarFallback className="text-2xl">
+                    {p.avatarUrl.startsWith('http') ? p.name.charAt(0) : p.avatarUrl}
+                </AvatarFallback>
               </Avatar>
               <div className="flex flex-col">
                 <span className="font-medium">{p.name}</span>
