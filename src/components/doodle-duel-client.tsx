@@ -41,6 +41,7 @@ type Player = {
   score: number;
   isDrawing: boolean;
   hasGuessed: boolean;
+  disconnected?: boolean;
 };
 
 type Message = {
@@ -88,21 +89,23 @@ const AVATARS = [
 
 // --- SUB-COMPONENTS ---
 
-const JoinScreen = ({ onJoin }: { onJoin: (name: string, avatarUrl: string) => void }) => {
+const JoinScreen = ({ onJoin }: { onJoin: (name: string, avatarUrl: string, roomId?: string | null) => void }) => {
   const [name, setName] = useState("");
   const [selectedAvatar, setSelectedAvatar] = useState(AVATARS[0]);
-  const [roomIdFromUrl, setRoomIdFromUrl] = useState<string | null>(null);
+  const [manualRoomId, setManualRoomId] = useState("");
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const id = params.get('roomId');
-    if (id) setRoomIdFromUrl(id.toUpperCase());
+    if (id) {
+        setManualRoomId(id.toUpperCase());
+    }
   }, []);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (name.trim()) {
-      onJoin(name.trim(), selectedAvatar.url);
+      onJoin(name.trim(), selectedAvatar.url, manualRoomId.trim().toUpperCase() || null);
     }
   };
 
@@ -149,8 +152,19 @@ const JoinScreen = ({ onJoin }: { onJoin: (name: string, avatarUrl: string) => v
                     ))}
                 </div>
             </div>
+            <div className="space-y-2">
+                <Label htmlFor="room-id">Join a Game (optional)</Label>
+                <Input
+                    id="room-id"
+                    placeholder="Enter Room ID"
+                    value={manualRoomId}
+                    onChange={(e) => setManualRoomId(e.target.value)}
+                    className="text-center text-lg h-12 uppercase"
+                    maxLength={5}
+                />
+            </div>
             <Button type="submit" className="w-full h-12 text-lg">
-              {roomIdFromUrl ? `Join Game: ${roomIdFromUrl}` : "Create New Game"}
+              {manualRoomId.trim() ? `Join Game: ${manualRoomId.trim().toUpperCase()}` : "Create New Game"}
             </Button>
           </form>
         </CardContent>
@@ -210,13 +224,20 @@ const Scoreboard = ({ players, currentPlayerId }: { players: Player[]; currentPl
     <CardContent>
       <ul className="space-y-3">
         {players.sort((a, b) => b.score - a.score).map((p) => (
-          <li key={p.id} className={cn("flex items-center justify-between p-2 rounded-lg transition-all", p.id === currentPlayerId && "bg-accent/50")}>
+          <li key={p.id || p.name} className={cn(
+              "flex items-center justify-between p-2 rounded-lg transition-all", 
+              p.id === currentPlayerId && "bg-accent/50",
+              p.disconnected && "opacity-50"
+            )}>
             <div className="flex items-center gap-3">
               <Avatar>
                 <AvatarImage src={p.avatarUrl} />
                 <AvatarFallback>{p.name.charAt(0)}</AvatarFallback>
               </Avatar>
-              <span className="font-medium">{p.name}</span>
+              <div className="flex flex-col">
+                <span className="font-medium">{p.name}</span>
+                {p.disconnected && <span className="text-xs text-muted-foreground">(disconnected)</span>}
+              </div>
               {p.isDrawing && <Pencil className="w-4 h-4 text-primary" />}
             </div>
             <div className="flex items-center gap-2">
@@ -510,9 +531,13 @@ export default function DoodleDuelClient() {
 
     socket.on("gameStateUpdate", (newGameState: GameState) => {
         setGameState(newGameState);
-        if (!newGameState.isRoundActive) {
-            setWordChoices([]);
-            setFullWord("");
+        if (newGameState.isRoundActive === false) {
+             setWordChoices([]);
+             setFullWord("");
+        }
+        const newRoomId = new URLSearchParams(window.location.search).get('roomId');
+        if (newRoomId && !roomId) {
+            setRoomId(newRoomId.toUpperCase());
         }
     });
 
@@ -564,9 +589,11 @@ export default function DoodleDuelClient() {
 
     socket.on("error", (message: string) => {
         toast({ title: "Error", description: message, variant: "destructive" });
-        if (message.includes("Room not found")) {
+        if (message.includes("Room not found") || message.includes("active in this room")) {
             setTimeout(() => {
-                window.location.href = "/";
+                window.history.pushState({}, '', '/');
+                setName(null);
+                setRoomId(null);
             }, 2000);
         }
     });
@@ -584,7 +611,7 @@ export default function DoodleDuelClient() {
         socket.off("error");
     };
 
-  }, [socket, toast, gameState.players]);
+  }, [socket, toast, gameState.players, roomId]);
   
   useEffect(() => {
     if (canvasRef.current && (canvasRef.current as any).updateBrush) {
@@ -607,13 +634,12 @@ export default function DoodleDuelClient() {
 
   // --- Callbacks & Handlers ---
 
-  const handleJoin = (newName: string, avatarUrl: string) => {
+  const handleJoin = (newName: string, avatarUrl: string, joinRoomId?: string | null) => {
     setName(newName);
-    const params = new URLSearchParams(window.location.search);
-    const roomIdFromUrl = params.get('roomId');
-
-    if (roomIdFromUrl) {
-        socket?.emit("joinRoom", { name: newName, avatarUrl, roomId: roomIdFromUrl });
+    if (joinRoomId) {
+        setRoomId(joinRoomId);
+        window.history.pushState({}, '', `/?roomId=${joinRoomId}`);
+        socket?.emit("joinRoom", { name: newName, avatarUrl, roomId: joinRoomId });
     } else {
         socket?.emit("createRoom", { name: newName, avatarUrl });
     }
@@ -646,6 +672,8 @@ export default function DoodleDuelClient() {
     return <JoinScreen onJoin={handleJoin} />;
   }
 
+  const activePlayers = gameState.players.filter(p => !p.disconnected);
+
   return (
     <>
       <Dialog open={isDrawer && wordChoices.length > 0}>
@@ -675,18 +703,18 @@ export default function DoodleDuelClient() {
         <div className="w-full md:w-1/4 flex flex-col gap-4">
           <RoomInfo roomId={roomId} toast={toast} />
           <Scoreboard players={gameState.players} currentPlayerId={socket?.id ?? null} />
-          <ChatBox messages={gameState.messages} onSendMessage={handleGuess} disabled={isDrawer || (me?.hasGuessed ?? false)} />
+          <ChatBox messages={gameState.messages} onSendMessage={handleGuess} disabled={isDrawer || (me?.hasGuessed ?? false) || me?.disconnected === true} />
         </div>
         <div className="w-full md:w-3/4 flex flex-col items-center justify-center gap-2">
-            {!gameState.isRoundActive ? (
+            {!gameState.isRoundActive && roomId ? (
                 <Card className="p-8 text-center">
                     <CardTitle className="text-2xl mb-2">Lobby</CardTitle>
                     <CardContent className="text-muted-foreground">
                         <p>Waiting for players...</p>
-                        <p>{gameState.players.length} / 8 players</p>
+                        <p>{activePlayers.length} / 8 players</p>
                     </CardContent>
-                    {isDrawer && gameState.players.length >= 2 && <Button onClick={handleStartGame} size="lg">Start Round</Button>}
-                    {isDrawer && gameState.players.length < 2 && <p className="mt-4 text-sm">You need at least 2 players to start.</p>}
+                    {isDrawer && activePlayers.length >= 2 && <Button onClick={handleStartGame} size="lg">Start Round</Button>}
+                    {isDrawer && activePlayers.length < 2 && <p className="mt-4 text-sm">You need at least 2 players to start.</p>}
                     {!isDrawer && <p className="mt-4 text-sm">Waiting for {gameState.players.find(p => p.isDrawing)?.name || 'the host'} to start the game.</p>}
                 </Card>
             ) : (

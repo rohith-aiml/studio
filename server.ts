@@ -21,6 +21,7 @@ type Player = {
   score: number;
   isDrawing: boolean;
   hasGuessed: boolean;
+  disconnected?: boolean;
 };
 
 type Message = {
@@ -110,14 +111,15 @@ app.prepare().then(() => {
   const startRound = (roomId: string) => {
     const room = gameRooms.get(roomId);
     if (!room) return;
-    if (room.gameState.players.length < 2) {
-      io.to(roomId).emit("error", "Not enough players to start a round.");
+    const activePlayers = room.gameState.players.filter(p => !p.disconnected);
+    if (activePlayers.length < 2) {
+      io.to(roomId).emit("error", "Not enough active players to start a round.");
       return;
     }
     
-    const currentDrawerIndex = room.gameState.players.findIndex(p => p.id === room.gameState.drawerId);
-    const nextDrawerIndex = (currentDrawerIndex + 1) % room.gameState.players.length;
-    const newDrawer = room.gameState.players[nextDrawerIndex];
+    const currentDrawerIndex = activePlayers.findIndex(p => p.id === room.gameState.drawerId);
+    const nextDrawerIndex = (currentDrawerIndex + 1) % activePlayers.length;
+    const newDrawer = activePlayers[nextDrawerIndex];
     
     if (!newDrawer) return;
 
@@ -131,11 +133,10 @@ app.prepare().then(() => {
     room.gameState.roundTimer = 90;
     room.gameState.isRoundActive = false;
     room.gameState.drawerId = newDrawer.id;
-    room.gameState.players = room.gameState.players.map(p => ({
-        ...p,
-        isDrawing: p.id === newDrawer.id,
-        hasGuessed: p.id === newDrawer.id,
-    }));
+    room.gameState.players.forEach(p => {
+        p.isDrawing = p.id === newDrawer.id;
+        p.hasGuessed = p.id === newDrawer.id;
+    });
     
     const wordChoices: string[] = [];
     const wordsCopy = [...words];
@@ -208,7 +209,7 @@ app.prepare().then(() => {
         currentRoomId = roomId;
         socket.join(roomId);
 
-        const player: Player = { id: socket.id, name, avatarUrl, score: 0, isDrawing: true, hasGuessed: true };
+        const player: Player = { id: socket.id, name, avatarUrl, score: 0, isDrawing: true, hasGuessed: true, disconnected: false };
 
         const newGameState: GameState = {
             players: [player],
@@ -229,17 +230,36 @@ app.prepare().then(() => {
             return;
         }
 
-        if (room.gameState.players.find(p => p.name.toLowerCase() === name.toLowerCase())) {
-            socket.emit("error", "A player with that name is already in this room.");
-            return;
-        }
+        const existingPlayer = room.gameState.players.find(p => p.name.toLowerCase() === name.toLowerCase());
 
+        if (existingPlayer) {
+            if (!existingPlayer.disconnected) {
+                socket.emit("error", "A player with that name is already active in this room.");
+                return;
+            }
+            // Player is rejoining
+            existingPlayer.id = socket.id;
+            existingPlayer.disconnected = false;
+            existingPlayer.avatarUrl = avatarUrl;
+            room.gameState.messages.push({ playerName: "System", text: `${existingPlayer.name} has rejoined the game.`, isCorrect: false });
+        } else {
+            // New player
+            const player: Player = { id: socket.id, name, avatarUrl, score: 0, isDrawing: false, hasGuessed: false, disconnected: false };
+            room.gameState.players.push(player);
+            room.gameState.messages.push({ playerName: "System", text: `${player.name} has joined the game.`, isCorrect: false });
+        }
+        
         currentRoomId = roomId;
         socket.join(roomId);
         
-        const player: Player = { id: socket.id, name, avatarUrl, score: 0, isDrawing: false, hasGuessed: false };
-        room.gameState.players.push(player);
-        room.gameState.messages.push({ playerName: "System", text: `${player.name} has joined the game.`, isCorrect: false });
+        if (!room.gameState.isRoundActive) {
+            const player = room.gameState.players.find(p => p.id === socket.id);
+            if (player) {
+                const isOnlyPlayer = room.gameState.players.filter(p => !p.disconnected).length === 1;
+                player.isDrawing = isOnlyPlayer;
+                player.hasGuessed = isOnlyPlayer;
+            }
+        }
         
         broadcastGameState(roomId);
     });
@@ -266,7 +286,7 @@ app.prepare().then(() => {
         room.gameState.messages.pop(); // Remove "is choosing..."
         room.gameState.messages.push({ playerName: "System", text: `${drawer.name} is now drawing!`, isCorrect: false });
         
-        room.roundInterval = setInterval(() => gameTick(currentRoomId), 1000);
+        room.roundInterval = setInterval(() => gameTick(currentRoomId!), 1000);
 
         broadcastGameState(currentRoomId);
         broadcastFullWordToDrawer(currentRoomId);
@@ -291,7 +311,7 @@ app.prepare().then(() => {
             const drawer = room.gameState.players.find(p => p.isDrawing);
             if (drawer) drawer.score += 20;
 
-            const allGuessed = room.gameState.players.filter(p => !p.isDrawing).every(p => p.hasGuessed);
+            const allGuessed = room.gameState.players.filter(p => !p.isDrawing && !p.disconnected).every(p => p.hasGuessed);
             if (allGuessed) {
                 endRound(currentRoomId, true);
             }
@@ -354,29 +374,42 @@ app.prepare().then(() => {
     });
 
     socket.on("disconnect", () => {
-      console.log(`Socket disconnected: ${socket.id}`);
-      if (!currentRoomId) return;
-      const room = gameRooms.get(currentRoomId);
-      if (!room) return;
+        console.log(`Socket disconnected: ${socket.id}`);
+        if (!currentRoomId) return;
+        const room = gameRooms.get(currentRoomId);
+        if (!room) return;
 
-      const player = room.gameState.players.find(p => p.id === socket.id);
-      if(player) {
-          room.gameState.messages.push({ playerName: "System", text: `${player.name} has left the game.`, isCorrect: false });
-      }
-      room.gameState.players = room.gameState.players.filter(p => p.id !== socket.id);
-      
-      if (room.gameState.players.length === 0) {
-        if (room.roundInterval) clearInterval(room.roundInterval);
-        if (room.hintInterval) clearInterval(room.hintInterval);
-        gameRooms.delete(currentRoomId);
-        console.log(`Room ${currentRoomId} closed.`);
-        return;
-      }
+        const playerIndex = room.gameState.players.findIndex(p => p.id === socket.id);
+        if (playerIndex !== -1) {
+            const player = room.gameState.players[playerIndex];
+            player.disconnected = true;
+            room.gameState.messages.push({ playerName: "System", text: `${player.name} has left the game.`, isCorrect: false });
+            
+            const activePlayers = room.gameState.players.filter(p => !p.disconnected);
+            if (activePlayers.length === 0) {
+                setTimeout(() => {
+                    const roomCheck = gameRooms.get(currentRoomId!);
+                    if (roomCheck && roomCheck.gameState.players.every(p => p.disconnected)) {
+                        if (roomCheck.roundInterval) clearInterval(roomCheck.roundInterval);
+                        if (roomCheck.hintInterval) clearInterval(roomCheck.hintInterval);
+                        gameRooms.delete(currentRoomId!);
+                        console.log(`Room ${currentRoomId} closed due to inactivity.`);
+                    }
+                }, 300000); // 5 minutes
+                broadcastGameState(currentRoomId);
+                return;
+            }
 
-      if (socket.id === room.gameState.drawerId) {
-        endRound(currentRoomId, false);
-      }
-      broadcastGameState(currentRoomId);
+            if (socket.id === room.gameState.drawerId) {
+                endRound(currentRoomId, false);
+            } else {
+                 const allGuessed = room.gameState.players.filter(p => !p.isDrawing && !p.disconnected).every(p => p.hasGuessed);
+                 if (allGuessed && activePlayers.length > 0) {
+                     endRound(currentRoomId, true);
+                 }
+            }
+            broadcastGameState(currentRoomId);
+        }
     });
   });
 
