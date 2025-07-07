@@ -32,6 +32,7 @@ import {
   Undo,
   Users,
   Vote,
+  X,
 } from "lucide-react";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { io, Socket } from "socket.io-client";
@@ -125,7 +126,7 @@ const JoinScreen = ({ onJoin }: { onJoin: (name: string, avatarUrl: string, room
   };
 
   return (
-    <div className="flex items-center justify-center min-h-screen bg-background">
+    <div className="flex items-center justify-center min-h-screen bg-background p-4">
       <Card className="w-full max-w-md shadow-2xl">
         <CardHeader>
           <CardTitle className="text-3xl font-bold text-center text-primary font-headline">
@@ -284,7 +285,6 @@ const Timer = ({ time }: { time: number }) => (
 const WordDisplay = ({ maskedWord, isDrawing, fullWord }: { maskedWord: string; isDrawing: boolean; fullWord: string; }) => {
     const [isWordVisible, setIsWordVisible] = useState(true);
 
-    // Reset visibility when the drawer gets a new word
     useEffect(() => {
         if (isDrawing && fullWord) {
             setIsWordVisible(true);
@@ -292,12 +292,12 @@ const WordDisplay = ({ maskedWord, isDrawing, fullWord }: { maskedWord: string; 
     }, [fullWord, isDrawing]);
     
     return (
-      <div className="text-center py-4">
+      <div className="text-center py-2 md:py-4">
         <p className="text-muted-foreground text-sm font-medium">
           {isDrawing ? "You are drawing:" : "Guess the word!"}
         </p>
         <div className="flex items-center justify-center gap-2">
-            <p className="text-4xl font-bold tracking-widest font-headline text-primary transition-all duration-300">
+            <p className="text-3xl md:text-4xl font-bold tracking-widest font-headline text-primary transition-all duration-300">
               {isDrawing ? (isWordVisible ? fullWord : '*'.repeat(fullWord.length).split('').join(' ')) : maskedWord}
             </p>
             {isDrawing && fullWord && (
@@ -330,6 +330,7 @@ const DrawingCanvas = React.forwardRef<HTMLCanvasElement, {
             if (!ctx) return;
             
             ctx.clearRect(0, 0, canvas.width, canvas.height);
+
             drawingHistory.forEach(({ path, color, lineWidth }) => {
                 ctx.strokeStyle = color;
                 ctx.lineWidth = lineWidth;
@@ -372,32 +373,51 @@ const DrawingCanvas = React.forwardRef<HTMLCanvasElement, {
         const startDrawing = useCallback((e: React.MouseEvent | React.TouchEvent) => {
             if (!isDrawingPlayer) return;
             e.preventDefault();
+            const canvas = ref && 'current' in ref && ref.current;
+            const ctx = canvas?.getContext('2d');
+            if (!ctx || !canvas) return;
+
             isDrawing.current = true;
             const coords = getCoords(e.nativeEvent);
             if (coords) {
-                const newPath = {
+                const newPathData = {
                     color: colorRef.current,
                     lineWidth: lineWidthRef.current,
                     path: [coords],
                 };
-                currentPath.current = newPath.path;
-                onDrawStart(newPath);
+                currentPath.current = newPathData.path;
+                
+                ctx.beginPath();
+                ctx.moveTo(coords.x, coords.y);
+                ctx.strokeStyle = newPathData.color;
+                ctx.lineWidth = newPathData.lineWidth;
+                ctx.lineCap = "round";
+                ctx.lineJoin = "round";
+                
+                onDrawStart(newPathData);
             }
-        }, [isDrawingPlayer, onDrawStart]);
+        }, [isDrawingPlayer, onDrawStart, ref]);
 
         const draw = useCallback((e: React.MouseEvent | React.TouchEvent) => {
             if (!isDrawing.current || !isDrawingPlayer) return;
             e.preventDefault();
+            const canvas = ref && 'current' in ref && ref.current;
+            const ctx = canvas?.getContext('2d');
+            if (!ctx) return;
+
             const coords = getCoords(e.nativeEvent);
-             if (coords) {
+            if (coords) {
+                ctx.lineTo(coords.x, coords.y);
+                ctx.stroke();
+
                 currentPath.current.push(coords);
                 onDrawing({
                     color: colorRef.current,
                     lineWidth: lineWidthRef.current,
-                    path: [...currentPath.current], // Send a copy
+                    path: [...currentPath.current],
                 });
             }
-        }, [isDrawingPlayer, onDrawing]);
+        }, [isDrawingPlayer, onDrawing, ref]);
 
         const stopDrawing = useCallback(() => {
             isDrawing.current = false;
@@ -411,7 +431,6 @@ const DrawingCanvas = React.forwardRef<HTMLCanvasElement, {
             };
         }
 
-
         return (
             <canvas
                 ref={ref}
@@ -424,7 +443,7 @@ const DrawingCanvas = React.forwardRef<HTMLCanvasElement, {
                 onTouchStart={startDrawing}
                 onTouchMove={draw}
                 onTouchEnd={stopDrawing}
-                className={cn("bg-white rounded-lg shadow-inner w-full h-auto aspect-[4/3] max-h-full max-w-full", isDrawingPlayer ? "cursor-crosshair" : "cursor-not-allowed")}
+                className={cn("bg-white rounded-lg shadow-inner absolute top-0 left-0 w-full h-full", isDrawingPlayer ? "cursor-crosshair" : "cursor-not-allowed")}
             />
         );
     }
@@ -433,27 +452,27 @@ DrawingCanvas.displayName = "DrawingCanvas";
 
 const Toolbar = ({ color, setColor, lineWidth, setLineWidth, onUndo, onClear, disabled }: { color: string; setColor: (c: string) => void; lineWidth: number; setLineWidth: (w: number) => void; onUndo: () => void; onClear: () => void; disabled: boolean }) => (
   <Card className="mt-2">
-    <CardContent className="p-2 flex flex-col md:flex-row items-center justify-center gap-4">
-      <div className="flex items-center gap-2">
+    <CardContent className="p-2 flex flex-wrap items-center justify-center gap-2 md:gap-4">
+      <div className="flex items-center gap-1 md:gap-2">
         {DRAWING_COLORS.map(c => (
           <Button
             key={c}
             onClick={() => setColor(c)}
             disabled={disabled}
             style={{ backgroundColor: c }}
-            className={cn("w-8 h-8 rounded-full border-2", color === c ? "border-primary ring-2 ring-primary" : "border-transparent")}
+            className={cn("w-6 h-6 md:w-8 md:h-8 rounded-full border-2", color === c ? "border-primary ring-2 ring-primary" : "border-transparent")}
             aria-label={`Color ${c}`}
           />
         ))}
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1 md:gap-2">
         {BRUSH_SIZES.map(s => (
           <Button
             key={s}
             onClick={() => setLineWidth(s)}
             disabled={disabled}
             variant={lineWidth === s ? "secondary" : "ghost"}
-            className="rounded-full w-10 h-10 p-0"
+            className="rounded-full w-8 h-8 md:w-10 md:h-10 p-0"
             aria-label={`Brush size ${s}`}
           >
             <span className="bg-black rounded-full" style={{ width: s*1.5, height: s*1.5 }}></span>
@@ -552,7 +571,6 @@ const GameOverScreen = ({ players, ownerId, currentSocketId, onPlayAgain }: { pl
         </h1>
         <h2 className="text-3xl text-muted-foreground mb-8">Final Scores</h2>
         <div className="flex flex-col md:flex-row gap-8 items-end justify-center">
-            {/* 2nd Place */}
             {topThree.length > 1 && (
                 <Card className="w-64 border-4 border-slate-400 shadow-2xl animate-slide-up" style={{ animationDelay: '200ms' }}>
                     <CardHeader className="p-4">
@@ -570,7 +588,6 @@ const GameOverScreen = ({ players, ownerId, currentSocketId, onPlayAgain }: { pl
                 </Card>
             )}
 
-            {/* 1st Place */}
             {topThree.length > 0 && (
                 <Card className="w-72 border-4 border-amber-400 shadow-2xl animate-slide-up order-first md:order-none">
                      <CardHeader className="p-4">
@@ -588,7 +605,6 @@ const GameOverScreen = ({ players, ownerId, currentSocketId, onPlayAgain }: { pl
                 </Card>
             )}
 
-            {/* 3rd Place */}
             {topThree.length > 2 && (
                  <Card className="w-64 border-4 border-amber-700 shadow-2xl animate-slide-up" style={{ animationDelay: '400ms' }}>
                     <CardHeader className="p-4">
@@ -660,51 +676,30 @@ export default function DoodleDuelClient() {
 
   // --- Effects ---
 
-  // Initialize Socket.IO
   useEffect(() => {
     const newSocket = io();
     setSocket(newSocket);
-
-    return () => {
-        newSocket.disconnect();
-    };
+    return () => { newSocket.disconnect(); };
   }, []);
 
-  // Socket event listeners
   useEffect(() => {
     if (!socket) return;
     
     socket.on("connect", () => console.log("Connected to server!"));
-
     socket.on("roomCreated", (newRoomId: string) => {
         setRoomId(newRoomId);
         window.history.pushState({}, '', `/?roomId=${newRoomId}`);
-        toast({
-            title: "Room Created!",
-            description: `You are in room ${newRoomId}. Share the link to invite others!`,
-        });
+        toast({ title: "Room Created!", description: `You are in room ${newRoomId}. Share the link to invite others!` });
     });
-
     socket.on("gameStateUpdate", (newGameState: GameState) => {
         setGameState(newGameState);
-        if (newGameState.isRoundActive === false) {
+        if (!newGameState.isRoundActive) {
              setWordChoices([]);
              setFullWord("");
         }
-        const newRoomId = new URLSearchParams(window.location.search).get('roomId');
-        if (newRoomId && !roomId) {
-            setRoomId(newRoomId.toUpperCase());
-        }
     });
-
-    socket.on("timerUpdate", (time: number) => {
-        setGameState(prev => ({...prev, roundTimer: time}));
-    });
-    
-    socket.on("pathStarted", (path: DrawingPath) => {
-        setGameState(prev => ({...prev, drawingHistory: [...prev.drawingHistory, path]}));
-    });
-
+    socket.on("timerUpdate", (time: number) => setGameState(prev => ({...prev, roundTimer: time})));
+    socket.on("pathStarted", (path: DrawingPath) => setGameState(prev => ({...prev, drawingHistory: [...prev.drawingHistory, path]})));
     socket.on("pathUpdated", (path: DrawingPath) => {
         setGameState(prev => {
             const newHistory = [...prev.drawingHistory];
@@ -712,70 +707,33 @@ export default function DoodleDuelClient() {
             return {...prev, drawingHistory: newHistory};
         });
     });
-
-    socket.on("drawingUndone", () => {
-        setGameState(prev => {
-            const newHistory = [...prev.drawingHistory];
-            newHistory.pop();
-            return {...prev, drawingHistory: newHistory};
-        });
-    });
-    
-    socket.on("canvasCleared", () => {
-        setGameState(prev => ({...prev, drawingHistory: []}));
-    });
-
-    socket.on("drawerWord", (word: string) => {
-        setFullWord(word);
-    });
-
-    socket.on("promptWordChoice", (choices: string[]) => {
-        setWordChoices(choices);
-    });
-
+    socket.on("drawingUndone", () => setGameState(prev => ({ ...prev, drawingHistory: prev.drawingHistory.slice(0, -1) })));
+    socket.on("canvasCleared", () => setGameState(prev => ({...prev, drawingHistory: []})));
+    socket.on("drawerWord", (word: string) => setFullWord(word));
+    socket.on("promptWordChoice", (choices: string[]) => setWordChoices(choices));
     socket.on("roundEnd", ({ word }: { word: string }) => {
         const player = gameState.players.find(p => p.id === socket.id);
-        const wasCorrect = player?.hasGuessed;
-        setWordChoices([]);
-
         toast({
-            title: wasCorrect ? "Round Over!" : "Time's Up!",
+            title: player?.hasGuessed ? "Round Over!" : "Time's Up!",
             description: `The word was: ${word}`,
             duration: 5000,
-            icon: wasCorrect ? <PartyPopper className="text-green-500" /> : <Clock />,
+            icon: player?.hasGuessed ? <PartyPopper className="text-green-500" /> : <Clock />,
         });
     });
-
     socket.on("aiSuggestion", (result: AnalyzeDrawingHistoryOutput) => {
         toast({
             title: "AI Suggestion",
-            description: (
-                <div className="flex items-center gap-2">
-                    <Vote />
-                    <div>
-                        <p>{result.reason}</p>
-                        <Button size="sm" className="mt-2">Vote to Skip</Button>
-                    </div>
-                </div>
-            ),
+            description: (<div className="flex items-center gap-2"><Vote /><div><p>{result.reason}</p><Button size="sm" className="mt-2">Vote to Skip</Button></div></div>),
             duration: 10000,
         });
     });
-
     socket.on("closeGuess", (message: string) => {
         toast({
             title: "Hint",
-            description: (
-                <div className="flex items-center gap-2">
-                    <Sparkles className="text-yellow-400" />
-                    <span>{message}</span>
-                </div>
-            ),
+            description: (<div className="flex items-center gap-2"><Sparkles className="text-yellow-400" /><span>{message}</span></div>),
             duration: 3000,
         });
     });
-
-
     socket.on("error", (message: string) => {
         toast({ title: "Error", description: message, variant: "destructive" });
         if (message.includes("Room not found") || message.includes("active in this room")) {
@@ -803,8 +761,7 @@ export default function DoodleDuelClient() {
         socket.off("closeGuess");
         socket.off("error");
     };
-
-  }, [socket, toast, gameState.players, roomId]);
+  }, [socket, toast, gameState.players]);
   
   useEffect(() => {
     if (canvasRef.current && (canvasRef.current as any).updateBrush) {
@@ -812,7 +769,6 @@ export default function DoodleDuelClient() {
     }
   }, [currentColor, currentLineWidth]);
 
-  // AI Drawing Analysis
   useEffect(() => {
     clearInterval(aiCheckIntervalRef.current);
     if (gameState.isRoundActive && !isDrawer) {
@@ -841,42 +797,15 @@ export default function DoodleDuelClient() {
   const handleStartGame = () => socket?.emit("startGame", { totalRounds: selectedRounds });
   const handleGuess = (guess: string) => socket?.emit("sendMessage", guess);
   const handlePlayAgain = () => socket?.emit("playAgain");
-  
   const handleWordChoice = (word: string) => {
     socket?.emit("wordChosen", word);
     setWordChoices([]);
   };
 
-  const handleStartPath = useCallback((path: DrawingPath) => {
-    socket?.emit("startPath", path);
-    // Optimistic update for the drawer
-    setGameState(prev => ({...prev, drawingHistory: [...prev.drawingHistory, path]}));
-  }, [socket]);
-
-  const handleDrawPath = useCallback((path: DrawingPath) => {
-    socket?.emit("drawPath", path);
-    // Optimistic update for the drawer
-    setGameState(prev => {
-        const newHistory = [...prev.drawingHistory];
-        newHistory[newHistory.length - 1] = path;
-        return {...prev, drawingHistory: newHistory};
-    });
-  }, [socket]);
-
-  const handleUndo = useCallback(() => {
-    socket?.emit("undo");
-    setGameState(prev => {
-        const newHistory = [...prev.drawingHistory];
-        newHistory.pop();
-        return {...prev, drawingHistory: newHistory};
-    });
-  }, [socket]);
-  
-  const handleClear = useCallback(() => {
-    socket?.emit("clearCanvas");
-    setGameState(prev => ({...prev, drawingHistory: []}));
-  }, [socket]);
-
+  const handleStartPath = useCallback((path: DrawingPath) => socket?.emit("startPath", path), [socket]);
+  const handleDrawPath = useCallback((path: DrawingPath) => socket?.emit("drawPath", path), [socket]);
+  const handleUndo = useCallback(() => socket?.emit("undo"), [socket]);
+  const handleClear = useCallback(() => socket?.emit("clearCanvas"), [socket]);
   const toggleFullscreen = () => setIsCanvasFullscreen(prev => !prev);
   
   const handleCanvasAreaClick = (e: React.MouseEvent) => {
@@ -891,21 +820,13 @@ export default function DoodleDuelClient() {
     } else {
       tapTimer.current = setTimeout(() => {
         tapCount.current = 0;
-      }, 400); // 400ms window
+      }, 400);
     }
   };
 
-  if (!name) {
-    return <JoinScreen onJoin={handleJoin} />;
-  }
-  
+  if (!name) return <JoinScreen onJoin={handleJoin} />;
   if (gameState.isGameOver) {
-    return <GameOverScreen 
-        players={gameState.players} 
-        ownerId={gameState.ownerId} 
-        currentSocketId={socket?.id ?? null}
-        onPlayAgain={handlePlayAgain}
-    />;
+    return <GameOverScreen players={gameState.players} ownerId={gameState.ownerId} currentSocketId={socket?.id ?? null} onPlayAgain={handlePlayAgain} />;
   }
 
   const activePlayers = gameState.players.filter(p => !p.disconnected);
@@ -916,98 +837,75 @@ export default function DoodleDuelClient() {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Choose a word to draw</DialogTitle>
-            <DialogDescription>
-              Select one of the words below. Only you can see them.
-            </DialogDescription>
+            <DialogDescription>Select one of the words below. Only you can see them.</DialogDescription>
           </DialogHeader>
           <div className="grid grid-cols-2 gap-4 py-4">
             {wordChoices.map((word) => (
-              <Button
-                key={word}
-                onClick={() => handleWordChoice(word)}
-                variant="outline"
-                className="h-12 text-base"
-              >
-                {word}
-              </Button>
+              <Button key={word} onClick={() => handleWordChoice(word)} variant="outline" className="h-12 text-base">{word}</Button>
             ))}
           </div>
         </DialogContent>
       </Dialog>
 
-      <main className="flex flex-col md:flex-row h-screen bg-background p-2 md:p-4 gap-4">
-        <div 
-          ref={canvasAreaRef}
-          onClick={handleCanvasAreaClick}
-          className={cn(
-            "w-full flex flex-col items-center justify-start gap-2",
-            isCanvasFullscreen 
-                ? "fixed inset-0 z-50 bg-background p-4 flex" 
-                : "relative md:w-3/4"
-          )}
-        >
+      <main className={cn(
+          "flex flex-col md:flex-row h-screen max-h-screen overflow-hidden bg-background p-2 md:p-4 gap-4",
+          isCanvasFullscreen && "fixed inset-0 z-50 p-4"
+        )}>
+        <div ref={canvasAreaRef} onClick={handleCanvasAreaClick} className="flex flex-col flex-1 min-h-0 items-center justify-center gap-2">
+            {isCanvasFullscreen && (
+              <Button onClick={toggleFullscreen} variant="ghost" size="icon" className="absolute top-4 right-4 z-50 bg-background/50 hover:bg-background">
+                <X />
+              </Button>
+            )}
             {!gameState.isRoundActive && roomId ? (
-                gameState.currentRound === 0 ? (
-                    <Card className="p-8 text-center m-auto">
-                        <CardTitle className="text-2xl mb-2">Lobby</CardTitle>
-                        <CardContent className="space-y-4">
-                            <p className="text-muted-foreground">{activePlayers.length} / 8 players</p>
-                            {isOwner && activePlayers.length >= 2 && (
-                                <div className="flex flex-col gap-4 items-center">
-                                    <div className="flex items-center gap-2">
-                                        <Label htmlFor="rounds">Rounds:</Label>
-                                        <Select onValueChange={(value) => setSelectedRounds(parseInt(value, 10))} defaultValue={String(selectedRounds)}>
-                                            <SelectTrigger id="rounds" className="w-24">
-                                                <SelectValue placeholder="Rounds" />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                {ROUND_OPTIONS.map(r => <SelectItem key={r} value={String(r)}>{r}</SelectItem>)}
-                                            </SelectContent>
-                                        </Select>
+                <div className="w-full h-full flex items-center justify-center">
+                    {gameState.currentRound === 0 ? (
+                        <Card className="p-8 text-center m-auto">
+                            <CardTitle className="text-2xl mb-2">Lobby</CardTitle>
+                            <CardContent className="space-y-4">
+                                <p className="text-muted-foreground">{activePlayers.length} / 8 players</p>
+                                {isOwner && activePlayers.length >= 2 && (
+                                    <div className="flex flex-col gap-4 items-center">
+                                        <div className="flex items-center gap-2">
+                                            <Label htmlFor="rounds">Rounds:</Label>
+                                            <Select onValueChange={(value) => setSelectedRounds(parseInt(value, 10))} defaultValue={String(selectedRounds)}>
+                                                <SelectTrigger id="rounds" className="w-24"><SelectValue placeholder="Rounds" /></SelectTrigger>
+                                                <SelectContent>{ROUND_OPTIONS.map(r => <SelectItem key={r} value={String(r)}>{r}</SelectItem>)}</SelectContent>
+                                            </Select>
+                                        </div>
+                                        <Button onClick={handleStartGame} size="lg">Start Game</Button>
                                     </div>
-                                    <Button onClick={handleStartGame} size="lg">Start Game</Button>
-                                </div>
-                            )}
-                            {isOwner && activePlayers.length < 2 && <p className="mt-4 text-sm text-muted-foreground">You need at least 2 players to start.</p>}
-                            {!isOwner && <p className="mt-4 text-sm text-muted-foreground">Waiting for {gameState.players.find(p => p.id === gameState.ownerId)?.name || 'the host'} to start the game.</p>}
-                        </CardContent>
-                    </Card>
-                ) : (
-                    <Card className="p-8 text-center m-auto animate-pulse">
-                        <CardTitle className="text-2xl mb-2">Next round is starting!</CardTitle>
-                        <CardContent className="space-y-4">
-                            <p className="text-lg text-muted-foreground">
-                                {isDrawer 
-                                    ? "You are choosing a word..." 
-                                    : `${gameState.players.find(p => p.id === gameState.drawerId)?.name || 'Someone'} is choosing a word...`
-                                }
-                            </p>
-                        </CardContent>
-                    </Card>
-                )
+                                )}
+                                {isOwner && activePlayers.length < 2 && <p className="mt-4 text-sm text-muted-foreground">You need at least 2 players to start.</p>}
+                                {!isOwner && <p className="mt-4 text-sm text-muted-foreground">Waiting for {gameState.players.find(p => p.id === gameState.ownerId)?.name || 'the host'} to start the game.</p>}
+                            </CardContent>
+                        </Card>
+                    ) : (
+                        <Card className="p-8 text-center m-auto animate-pulse">
+                            <CardTitle className="text-2xl mb-2">Next round is starting!</CardTitle>
+                            <CardContent className="space-y-4">
+                                <p className="text-lg text-muted-foreground">{isDrawer ? "You are choosing a word..." : `${gameState.players.find(p => p.id === gameState.drawerId)?.name || 'Someone'} is choosing a word...`}</p>
+                            </CardContent>
+                        </Card>
+                    )}
+                </div>
             ) : (
                 <>
-                    <div className={cn("w-full max-w-2xl flex-shrink-0", isCanvasFullscreen && "pt-4")}>
-                         <div className="text-center text-lg font-semibold text-muted-foreground mb-1">
-                            {gameState.currentRound > 0 && `Round ${gameState.currentRound} / ${gameState.gameSettings.totalRounds}`}
-                        </div>
+                    <div className="w-full max-w-2xl flex-shrink-0">
+                        <div className="text-center text-lg font-semibold text-muted-foreground mb-1">{gameState.currentRound > 0 && `Round ${gameState.currentRound} / ${gameState.gameSettings.totalRounds}`}</div>
                         <Timer time={gameState.roundTimer} />
                         <WordDisplay maskedWord={gameState.currentWord} isDrawing={isDrawer} fullWord={fullWord} />
                     </div>
                     <div className="relative w-full flex-1 flex items-center justify-center min-h-0">
-                        <DrawingCanvas 
-                            ref={canvasRef} 
-                            onDrawStart={handleStartPath}
-                            onDrawing={handleDrawPath} 
-                            isDrawingPlayer={isDrawer}
-                            drawingHistory={gameState.drawingHistory}
-                        />
+                      <div className="relative aspect-[4/3] w-full h-full max-w-full max-h-full">
+                        <DrawingCanvas ref={canvasRef} onDrawStart={handleStartPath} onDrawing={handleDrawPath} isDrawingPlayer={isDrawer} drawingHistory={gameState.drawingHistory}/>
+                      </div>
                     </div>
                     {isDrawer && <Toolbar color={currentColor} setColor={setCurrentColor} lineWidth={currentLineWidth} setLineWidth={setCurrentLineWidth} onUndo={handleUndo} onClear={handleClear} disabled={!isDrawer} />}
                 </>
             )}
         </div>
-        <div className={cn("w-full md:w-1/4 flex flex-col gap-4 min-h-0", isCanvasFullscreen && "hidden")}>
+        <div className={cn("w-full md:w-[320px] lg:w-[350px] flex-col gap-4 min-h-0", isCanvasFullscreen ? "hidden" : "flex")}>
           <RoomInfo roomId={roomId} toast={toast} />
           <Scoreboard players={gameState.players} currentPlayerId={socket?.id ?? null} />
           <ChatBox messages={gameState.messages} onSendMessage={handleGuess} disabled={isDrawer || (me?.hasGuessed ?? false) || me?.disconnected === true} />
@@ -1017,3 +915,5 @@ export default function DoodleDuelClient() {
     </>
   );
 }
+
+    
