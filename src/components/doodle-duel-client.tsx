@@ -193,6 +193,7 @@ const DrawingCanvas = React.forwardRef<HTMLCanvasElement, { onDrawEnd: (path: Dr
             if (!ref || typeof ref === 'function' || !ref.current) return null;
             const canvas = ref.current;
             const rect = canvas.getBoundingClientRect();
+            
             let clientX, clientY;
             if (e instanceof MouseEvent) {
                 clientX = e.clientX;
@@ -203,7 +204,14 @@ const DrawingCanvas = React.forwardRef<HTMLCanvasElement, { onDrawEnd: (path: Dr
             } else {
                 return null;
             }
-            return { x: clientX - rect.left, y: clientY - rect.top };
+
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+
+            return { 
+                x: (clientX - rect.left) * scaleX, 
+                y: (clientY - rect.top) * scaleY 
+            };
         };
         
         const startDrawing = useCallback((e: React.MouseEvent | React.TouchEvent) => {
@@ -568,4 +576,3 @@ export default function DoodleDuelClient() {
     </>
   );
 }
-
