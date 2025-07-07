@@ -906,5 +906,3 @@ export default function DoodleDuelClient() {
     </>
   );
 }
-
-    
