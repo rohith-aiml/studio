@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import {
@@ -35,10 +36,10 @@ import {
   X,
 } from "lucide-react";
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import Confetti from "react-confetti";
 import { io, Socket } from "socket.io-client";
 import type { AnalyzeDrawingHistoryOutput } from "@/ai/flows/skip-vote-trigger";
 import { Toaster } from "./ui/toaster";
-import Confetti from "react-confetti";
 
 // --- TYPES ---
 type Player = {
@@ -215,15 +216,15 @@ const RoomInfo = ({ roomId, toast }: { roomId: string | null; toast: any }) => {
     };
 
     return (
-        <Card className="mb-4 flex-shrink-0">
-            <CardHeader className="p-4">
-                <CardTitle className="text-lg">Invite Players</CardTitle>
+        <Card className="flex-shrink-0">
+            <CardHeader className="p-3">
+                <CardTitle className="text-base">Invite Players</CardTitle>
             </CardHeader>
-            <CardContent className="p-4 pt-0">
-                <p className="text-sm text-muted-foreground mb-2">Share this link to invite others to room <span className="font-bold text-primary">{roomId}</span>.</p>
+            <CardContent className="p-3 pt-0">
+                <p className="text-xs text-muted-foreground mb-2">Room <span className="font-bold text-primary">{roomId}</span></p>
                 <div className="flex gap-2">
-                    <Input value={inviteLink} readOnly className="text-sm" />
-                    <Button onClick={copyToClipboard} size="icon" variant="outline">
+                    <Input value={inviteLink} readOnly className="text-sm h-9" />
+                    <Button onClick={copyToClipboard} size="icon" variant="outline" className="h-9 w-9">
                         <ClipboardCopy className="w-4 h-4" />
                     </Button>
                 </div>
@@ -234,13 +235,13 @@ const RoomInfo = ({ roomId, toast }: { roomId: string | null; toast: any }) => {
 
 
 const Scoreboard = ({ players, currentPlayerId }: { players: Player[]; currentPlayerId: string | null; }) => (
-  <Card className="h-full flex-shrink-0">
-    <CardHeader>
-      <CardTitle className="flex items-center gap-2">
+  <Card className="h-full flex flex-col min-h-0">
+    <CardHeader className="p-3 md:p-6">
+      <CardTitle className="flex items-center gap-2 text-base md:text-2xl">
         <Users className="text-primary" /> Scoreboard
       </CardTitle>
     </CardHeader>
-    <CardContent>
+    <CardContent className="flex-grow overflow-y-auto pr-2 space-y-2">
       <ul className="space-y-3">
         {players.sort((a, b) => b.score - a.score).map((p) => (
           <li key={p.id || p.name} className={cn(
@@ -249,20 +250,20 @@ const Scoreboard = ({ players, currentPlayerId }: { players: Player[]; currentPl
               p.disconnected && "opacity-50"
             )}>
             <div className="flex items-center gap-3">
-              <Avatar>
+              <Avatar className="w-8 h-8 md:w-10 md:h-10">
                 <AvatarImage src={p.avatarUrl} />
-                <AvatarFallback className="text-2xl">
+                <AvatarFallback className="text-xl md:text-2xl">
                     {p.avatarUrl.startsWith('http') ? p.name.charAt(0) : p.avatarUrl}
                 </AvatarFallback>
               </Avatar>
               <div className="flex flex-col">
-                <span className="font-medium">{p.name}</span>
+                <span className="font-medium text-sm md:text-base">{p.name}</span>
                 {p.disconnected && <span className="text-xs text-muted-foreground">(disconnected)</span>}
               </div>
               {p.isDrawing && <Pencil className="w-4 h-4 text-primary" />}
             </div>
             <div className="flex items-center gap-2">
-              <span className="font-bold text-lg text-primary">{p.score}</span>
+              <span className="font-bold text-base md:text-lg text-primary">{p.score}</span>
               {p.hasGuessed && <Check className="w-5 h-5 text-green-500" />}
             </div>
           </li>
@@ -329,7 +330,16 @@ const DrawingCanvas = React.forwardRef<HTMLCanvasElement, {
             const ctx = canvas.getContext("2d");
             if (!ctx) return;
             
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            // Handle DPI scaling for sharp drawings
+            const dpr = window.devicePixelRatio || 1;
+            const rect = canvas.getBoundingClientRect();
+            if (canvas.width !== rect.width * dpr || canvas.height !== rect.height * dpr) {
+                canvas.width = rect.width * dpr;
+                canvas.height = rect.height * dpr;
+                ctx.scale(dpr, dpr);
+            }
+
+            ctx.clearRect(0, 0, rect.width, rect.height);
 
             drawingHistory.forEach(({ path, color, lineWidth }) => {
                 ctx.strokeStyle = color;
@@ -361,12 +371,9 @@ const DrawingCanvas = React.forwardRef<HTMLCanvasElement, {
                 return null;
             }
 
-            const scaleX = canvas.width / rect.width;
-            const scaleY = canvas.height / rect.height;
-
             return { 
-                x: (clientX - rect.left) * scaleX, 
-                y: (clientY - rect.top) * scaleY 
+                x: clientX - rect.left, 
+                y: clientY - rect.top
             };
         };
         
@@ -434,8 +441,6 @@ const DrawingCanvas = React.forwardRef<HTMLCanvasElement, {
         return (
             <canvas
                 ref={ref}
-                width={800}
-                height={600}
                 onMouseDown={startDrawing}
                 onMouseMove={draw}
                 onMouseUp={stopDrawing}
@@ -443,7 +448,7 @@ const DrawingCanvas = React.forwardRef<HTMLCanvasElement, {
                 onTouchStart={startDrawing}
                 onTouchMove={draw}
                 onTouchEnd={stopDrawing}
-                className={cn("bg-white rounded-lg shadow-inner absolute top-0 left-0 w-full h-full", isDrawingPlayer ? "cursor-crosshair" : "cursor-not-allowed")}
+                className={cn("bg-white rounded-lg shadow-inner w-full h-full", isDrawingPlayer ? "cursor-crosshair" : "cursor-not-allowed")}
             />
         );
     }
@@ -504,18 +509,21 @@ const ChatBox = ({ messages, onSendMessage, disabled }: { messages: Message[], o
     };
     
     return (
-        <Card className="flex-grow flex flex-col min-h-0">
-            <CardHeader><CardTitle>Chat & Guesses</CardTitle></CardHeader>
+        <Card className="flex-grow flex flex-col min-h-0 h-full">
+            <CardHeader className="p-3 md:p-6"><CardTitle className="text-base md:text-2xl">Chat & Guesses</CardTitle></CardHeader>
             <CardContent className="flex-grow overflow-y-auto pr-2 space-y-2">
                 {messages.map((msg, i) => (
-                    <div key={i} className={cn("p-2 rounded-lg", msg.isCorrect ? "bg-green-100 dark:bg-green-900" : "bg-muted/50")}>
-                        <span className="font-bold text-primary">{msg.playerName}: </span> 
-                        {msg.isCorrect ? <span className="text-green-600 dark:text-green-400 font-medium">{msg.text}</span> : <span>{msg.text}</span>}
+                    <div key={i} className={cn("p-2 rounded-lg text-sm md:text-base", msg.isCorrect ? "bg-green-100 dark:bg-green-900" : "bg-muted/50")}>
+                        {msg.isCorrect ? (
+                             <span className="text-green-600 dark:text-green-400 font-medium">{msg.text}</span>
+                        ) : (
+                           <span><span className="font-bold text-primary">{msg.playerName}: </span> {msg.text}</span>
+                        )}
                     </div>
                 ))}
                 <div ref={messagesEndRef} />
             </CardContent>
-            <form onSubmit={handleSubmit} className="p-4 border-t">
+            <form onSubmit={handleSubmit} className="p-2 md:p-4 border-t">
                 <div className="relative">
                     <Input
                         placeholder={disabled ? "Only guessers can chat" : "Type your guess..."}
@@ -703,7 +711,9 @@ export default function DoodleDuelClient() {
     socket.on("pathUpdated", (path: DrawingPath) => {
         setGameState(prev => {
             const newHistory = [...prev.drawingHistory];
-            newHistory[newHistory.length - 1] = path;
+            if (newHistory.length > 0) {
+              newHistory[newHistory.length - 1] = path;
+            }
             return {...prev, drawingHistory: newHistory};
         });
     });
@@ -857,7 +867,7 @@ export default function DoodleDuelClient() {
                 <X />
               </Button>
             )}
-            {!gameState.isRoundActive && roomId ? (
+            {!roomId || (!gameState.isRoundActive && !gameState.isGameOver) ? (
                 <div className="w-full h-full flex items-center justify-center">
                     {gameState.currentRound === 0 ? (
                         <Card className="p-8 text-center m-auto">
@@ -892,7 +902,7 @@ export default function DoodleDuelClient() {
             ) : (
                 <>
                     <div className="w-full max-w-2xl flex-shrink-0">
-                        <div className="text-center text-lg font-semibold text-muted-foreground mb-1">{gameState.currentRound > 0 && `Round ${gameState.currentRound} / ${gameState.gameSettings.totalRounds}`}</div>
+                        {gameState.currentRound > 0 && <div className="text-center text-lg font-semibold text-muted-foreground mb-1">{`Round ${gameState.currentRound} / ${gameState.gameSettings.totalRounds}`}</div>}
                         <Timer time={gameState.roundTimer} />
                         <WordDisplay maskedWord={gameState.currentWord} isDrawing={isDrawer} fullWord={fullWord} />
                     </div>
@@ -905,10 +915,30 @@ export default function DoodleDuelClient() {
                 </>
             )}
         </div>
-        <div className={cn("w-full md:w-[320px] lg:w-[350px] flex-col gap-4 min-h-0", isCanvasFullscreen ? "hidden" : "flex")}>
+        <div className={cn("w-full md:w-[320px] lg:w-[350px] flex flex-col gap-4 min-h-0", isCanvasFullscreen ? "hidden" : "flex")}>
           <RoomInfo roomId={roomId} toast={toast} />
-          <Scoreboard players={gameState.players} currentPlayerId={socket?.id ?? null} />
-          <ChatBox messages={gameState.messages} onSendMessage={handleGuess} disabled={isDrawer || (me?.hasGuessed ?? false) || me?.disconnected === true} />
+          
+          {/* Desktop Sidebar */}
+          <div className="hidden md:flex flex-col gap-4 flex-1 min-h-0">
+            <Scoreboard players={gameState.players} currentPlayerId={socket?.id ?? null} />
+            <ChatBox messages={gameState.messages} onSendMessage={handleGuess} disabled={isDrawer || (me?.hasGuessed ?? false) || me?.disconnected === true} />
+          </div>
+
+          {/* Mobile Tabs */}
+          <div className="flex-1 md:hidden min-h-0">
+             <Tabs defaultValue="chat" className="flex flex-col h-full">
+                <TabsList className="grid w-full grid-cols-2">
+                  <TabsTrigger value="chat">Chat</TabsTrigger>
+                  <TabsTrigger value="scores">Scores</TabsTrigger>
+                </TabsList>
+                <TabsContent value="chat" className="mt-2 flex-1 min-h-0">
+                  <ChatBox messages={gameState.messages} onSendMessage={handleGuess} disabled={isDrawer || (me?.hasGuessed ?? false) || me?.disconnected === true} />
+                </TabsContent>
+                <TabsContent value="scores" className="mt-2 flex-1 min-h-0">
+                  <Scoreboard players={gameState.players} currentPlayerId={socket?.id ?? null} />
+                </TabsContent>
+            </Tabs>
+          </div>
         </div>
       </main>
       <Toaster />

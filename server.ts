@@ -155,12 +155,19 @@ app.prepare().then(() => {
     }
     
     const currentDrawerIndex = activePlayers.findIndex(p => p.id === room.gameState.drawerId);
-    const nextDrawerIndex = (currentDrawerIndex + 1) % activePlayers.length;
+    let nextDrawerIndex = (currentDrawerIndex + 1) % activePlayers.length;
 
     // A full cycle of drawers is complete, start a new round
     if (nextDrawerIndex === 0) {
-        room.gameState.currentRound++;
+        if (room.gameState.currentRound === 0) { // First round starting
+             nextDrawerIndex = 0;
+        } else {
+             room.gameState.currentRound++;
+        }
     }
+     if (currentDrawerIndex === -1) { // This happens at the very start of the game
+        room.gameState.currentRound = 1;
+     }
 
     if (room.gameState.currentRound > room.gameState.gameSettings.totalRounds) {
         room.gameState.isGameOver = true;
@@ -189,7 +196,7 @@ app.prepare().then(() => {
     room.gameState.drawerId = newDrawer.id;
     room.gameState.players.forEach(p => {
         p.isDrawing = p.id === newDrawer.id;
-        p.hasGuessed = false; // Reset guess status for everyone except drawer
+        p.hasGuessed = false;
     });
     const drawerPlayer = room.gameState.players.find(p => p.id === newDrawer.id);
     if(drawerPlayer) drawerPlayer.hasGuessed = true;
@@ -341,16 +348,17 @@ app.prepare().then(() => {
             }
             
             room.gameState.gameSettings.totalRounds = totalRounds;
-            room.gameState.currentRound = 0; // Will be incremented to 1 in startRound
+            room.gameState.currentRound = 1;
             room.gameState.isGameOver = false;
             room.gameState.players.forEach(p => { p.score = 0; });
     
-            // Make the owner the first drawer by setting the "previous" drawer to be the last player
+            // Make the owner the first drawer
             const ownerIndex = activePlayers.findIndex(p => p.id === socket.id);
-            if(ownerIndex > 0) {
+            if(ownerIndex !== 0) {
                 const owner = activePlayers.splice(ownerIndex, 1)[0];
                 activePlayers.unshift(owner);
-                 room.gameState.players = room.gameState.players.map(p => activePlayers.find(ap => ap.id === p.id) || p).filter(Boolean);
+                 room.gameState.players = room.gameState.players.map(p => activePlayers.find(ap => ap.id === p.id) || p).filter(p => p.disconnected === false);
+                 room.gameState.players.push(...room.gameState.players.filter(p => p.disconnected === true));
             }
             
             room.gameState.drawerId = activePlayers[activePlayers.length - 1].id;
@@ -369,7 +377,6 @@ app.prepare().then(() => {
             const ownerName = room.gameState.players.find(p => p.id === socket.id)?.name || 'The host';
             room.gameState.messages = [{ playerName: "System", text: `${ownerName} started a new game!`, isCorrect: false }];
             room.gameState.drawingHistory = [];
-            room.gameState.drawerId = socket.id;
             
             room.gameState.players.forEach(p => {
                 p.score = 0;
@@ -377,6 +384,8 @@ app.prepare().then(() => {
                 p.isDrawing = isOwner;
                 p.hasGuessed = isOwner;
             });
+            room.gameState.drawerId = socket.id;
+
 
             broadcastGameState(currentRoomId);
         }
@@ -408,33 +417,36 @@ app.prepare().then(() => {
         if (!room) return;
 
         const player = room.gameState.players.find(p => p.id === socket.id);
-        if (!player || player.isDrawing || player.hasGuessed) return;
+        if (!player || player.isDrawing || player.hasGuessed || !room.gameState.isRoundActive) return;
 
         const normalizedGuess = text.trim().toLowerCase();
         const normalizedWord = room.gameState.currentWord.trim().toLowerCase();
         const isCorrect = normalizedGuess === normalizedWord;
 
-        room.gameState.messages.push({ playerName: player.name, text, isCorrect });
-
-        if(isCorrect) {
+        if (isCorrect) {
             player.hasGuessed = true;
-            const guesserPoints = Math.max(10, Math.floor(room.gameState.roundTimer * 0.5));
+            const guesserPoints = Math.max(10, Math.floor(room.gameState.roundTimer * 0.6) + 10);
             player.score += guesserPoints;
 
             const drawer = room.gameState.players.find(p => p.isDrawing);
-            if (drawer) drawer.score += 20;
+            if (drawer) {
+                drawer.score += 20;
+            }
+
+            room.gameState.messages.push({ playerName: "System", text: `${player.name} guessed the word! (+${guesserPoints} pts)`, isCorrect: true });
 
             const allGuessed = room.gameState.players.filter(p => !p.isDrawing && !p.disconnected).every(p => p.hasGuessed);
             if (allGuessed) {
                 endRound(currentRoomId, true);
             }
         } else {
-            if (room.gameState.isRoundActive && room.gameState.currentWord) {
+            room.gameState.messages.push({ playerName: player.name, text, isCorrect: false });
+            if (room.gameState.currentWord) {
                 const distance = levenshteinDistance(normalizedGuess, normalizedWord);
                 if (distance === 1) {
-                    socket.emit('closeGuess', "One letter unmatched");
-                } else if (distance === 2) {
-                    socket.emit('closeGuess', "You're close.");
+                    socket.emit('closeGuess', "One letter off!");
+                } else if (distance <= 2) {
+                    socket.emit('closeGuess', "You're close!");
                 }
             }
         }
@@ -531,7 +543,7 @@ app.prepare().then(() => {
                 endRound(currentRoomId, false);
             } else {
                  const allGuessed = room.gameState.players.filter(p => !p.isDrawing && !p.disconnected).every(p => p.hasGuessed);
-                 if (allGuessed && activePlayers.length > 0) {
+                 if (allGuessed && activePlayers.length > 1) { // Need more than one player for the round to end
                      endRound(currentRoomId, true);
                  }
             }
