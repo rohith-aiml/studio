@@ -203,14 +203,14 @@ const Scoreboard = ({ players, currentPlayerId }: { players: Player[]; currentPl
         <Users className="text-primary" /> Players
       </CardTitle>
     </CardHeader>
-    <CardContent className="flex-grow overflow-y-auto pr-2 space-y-2">
+    <CardContent className="flex-grow overflow-y-auto p-2 space-y-2">
       <ul className="space-y-3">
         {players.sort((a, b) => b.score - a.score).map((p) => (
           <li key={p.id || p.name} className={cn(
               "flex items-center justify-between p-2 rounded-lg transition-all", 
               p.id === currentPlayerId && "bg-accent/50",
               p.disconnected && "opacity-50",
-              p.hasGuessed && !p.isDrawing && "bg-green-500/20"
+              p.hasGuessed && !p.isDrawing && "bg-green-100 dark:bg-green-900"
             )}>
             <div className="flex items-center gap-3">
               <Avatar className="w-10 h-10">
@@ -245,12 +245,12 @@ const WordDisplay = ({ maskedWord, isDrawing, fullWord }: { maskedWord: string; 
     }, [fullWord, isDrawing]);
     
     return (
-      <div className="text-center py-1">
+      <div className="text-center py-1 flex-grow">
         <p className="text-muted-foreground text-xs font-medium">
           {isDrawing ? "You are drawing:" : "Guess the word!"}
         </p>
         <div className="flex items-center justify-center gap-2">
-            <p className="text-lg md:text-2xl font-bold tracking-widest font-headline text-primary transition-all duration-300">
+            <p className="text-2xl md:text-3xl font-bold tracking-widest font-headline text-primary transition-all duration-300">
               {isDrawing ? (isWordVisible ? fullWord : '*'.repeat(fullWord.length).split('').join(' ')) : maskedWord}
             </p>
             {isDrawing && fullWord && (
@@ -462,7 +462,7 @@ const ChatBox = ({ messages, onSendMessage, disabled }: { messages: Message[], o
     return (
         <Card className="flex-grow flex flex-col min-h-0 h-full">
             <CardHeader className="p-4"><CardTitle className="text-xl">Chat & Guesses</CardTitle></CardHeader>
-            <CardContent className="flex-grow overflow-y-auto pr-2 space-y-2">
+            <CardContent className="flex-grow overflow-y-auto p-2 space-y-2">
                 {messages.map((msg, i) => (
                     <div key={i} className={cn("p-2 rounded-lg text-sm md:text-base", msg.isCorrect ? "bg-green-100 dark:bg-green-900" : "bg-muted/50")}>
                         {msg.isCorrect ? (
@@ -888,7 +888,7 @@ export default function DoodleDuelClient() {
                                   <span className="text-xl font-bold tracking-widest text-primary">{roomId}</span>
                                   <Button onClick={copyInvite} size="icon" variant="ghost">
                                       <ClipboardCopy className="w-5 h-5" />
-                                      <span className="sr-only">Copy Invite Link</span>
+                                      <span className="sr-only">Copy Link</span>
                                   </Button>
                               </div>
                           </div>
@@ -949,12 +949,12 @@ export default function DoodleDuelClient() {
         <div className="flex h-full flex-col p-2 md:p-4 gap-2 md:gap-4">
           {/* Top Bar */}
           <div className="flex items-center justify-between gap-4 flex-shrink-0 px-2">
-            <div className="flex items-center gap-2 text-lg font-bold text-primary">
+            <div className="flex items-center gap-2 text-lg font-bold text-primary w-1/4">
                 <Clock className="w-5 h-5" />
                 <span>{gameState.roundTimer}</span>
             </div>
             <WordDisplay maskedWord={gameState.currentWord} isDrawing={isDrawer} fullWord={fullWord} />
-            <div className="flex items-center gap-2">
+            <div className="flex items-center justify-end gap-2 w-1/4">
               <div className="text-sm hidden md:block">
                   <span className="text-muted-foreground">Room </span>
                   <span className="font-bold text-primary">{roomId}</span>
@@ -974,9 +974,9 @@ export default function DoodleDuelClient() {
             </div>
 
             {/* Center Column: Canvas */}
-            <div className="flex-1 flex flex-col min-h-0 gap-2 h-full md:h-auto order-first md:order-none">
+            <div className="flex flex-col min-h-0 gap-2 order-first md:order-none h-3/5 md:h-auto md:flex-1">
               <div className="relative w-full flex-1 flex items-center justify-center min-h-0">
-                  <div className="relative aspect-[16/9] w-full h-full max-w-full max-h-full">
+                  <div className="relative w-full h-full">
                     <DrawingCanvas ref={canvasRef} onDrawStart={handleStartPath} onDrawing={handleDrawPath} isDrawingPlayer={isDrawer} drawingHistory={gameState.drawingHistory}/>
                   </div>
               </div>
@@ -984,7 +984,7 @@ export default function DoodleDuelClient() {
             </div>
 
             {/* Right Column: Chat (Desktop) / Tabs (Mobile) */}
-            <div className="w-full md:w-[320px] lg:w-[350px] flex flex-col gap-4 min-h-0 flex-1 md:flex-initial">
+            <div className="w-full md:w-[320px] lg:w-[350px] flex flex-col min-h-0 flex-1 md:flex-initial">
               <div className="hidden md:flex flex-col h-full">
                 <ChatBox messages={gameState.messages} onSendMessage={handleGuess} disabled={isDrawer || (me?.hasGuessed ?? false) || me?.disconnected === true} />
               </div>
@@ -1013,3 +1013,4 @@ export default function DoodleDuelClient() {
     </>
   );
 }
+
