@@ -448,7 +448,7 @@ const DrawingCanvas = React.forwardRef<HTMLCanvasElement, {
                 onTouchStart={startDrawing}
                 onTouchMove={draw}
                 onTouchEnd={stopDrawing}
-                className={cn("bg-white rounded-lg shadow-inner w-full h-full", isDrawingPlayer ? "cursor-crosshair" : "cursor-not-allowed")}
+                className={cn("bg-white rounded-lg shadow-inner w-full h-full touch-none", isDrawingPlayer ? "cursor-crosshair" : "cursor-not-allowed")}
             />
         );
     }
@@ -543,6 +543,7 @@ const ChatBox = ({ messages, onSendMessage, disabled }: { messages: Message[], o
 const GameOverScreen = ({ players, ownerId, currentSocketId, onPlayAgain }: { players: Player[]; ownerId: string | null; currentSocketId: string | null; onPlayAgain: () => void; }) => {
     const winners = [...players].sort((a, b) => b.score - a.score);
     const topThree = winners.slice(0, 3);
+    const restOfPlayers = winners.slice(3);
     const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
     const [showConfetti, setShowConfetti] = useState(false);
 
@@ -558,7 +559,7 @@ const GameOverScreen = ({ players, ownerId, currentSocketId, onPlayAgain }: { pl
     }, []);
 
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-background text-center p-4 overflow-hidden">
+      <div className="flex flex-col items-center justify-center min-h-screen bg-background text-center p-4 overflow-y-auto">
         {showConfetti && dimensions.width > 0 && (
             <Confetti
                 width={dimensions.width}
@@ -574,13 +575,13 @@ const GameOverScreen = ({ players, ownerId, currentSocketId, onPlayAgain }: { pl
                 }}
             />
         )}
-        <h1 className="text-6xl font-bold text-primary mb-4 font-headline animate-bounce">
+        <h1 className="text-5xl md:text-6xl font-bold text-primary mb-4 font-headline animate-bounce">
           Game Over!
         </h1>
-        <h2 className="text-3xl text-muted-foreground mb-8">Final Scores</h2>
-        <div className="flex flex-col md:flex-row gap-8 items-end justify-center">
-            {topThree.length > 1 && (
-                <Card className="w-64 border-4 border-slate-400 shadow-2xl animate-slide-up" style={{ animationDelay: '200ms' }}>
+        <h2 className="text-2xl md:text-3xl text-muted-foreground mb-8">Final Scores</h2>
+        <div className="flex flex-row flex-wrap items-end justify-center gap-4">
+            {topThree[1] && (
+                <Card className="w-full max-w-[14rem] md:w-64 border-4 border-slate-400 shadow-2xl animate-slide-up order-2" style={{ animationDelay: '200ms' }}>
                     <CardHeader className="p-4">
                         <Trophy className="w-16 h-16 mx-auto text-slate-400" />
                         <CardTitle className="text-4xl">2nd</CardTitle>
@@ -590,14 +591,14 @@ const GameOverScreen = ({ players, ownerId, currentSocketId, onPlayAgain }: { pl
                             <AvatarImage src={topThree[1].avatarUrl} />
                             <AvatarFallback className="text-5xl bg-card">{topThree[1].avatarUrl}</AvatarFallback>
                         </Avatar>
-                        <p className="text-2xl font-bold">{topThree[1].name}</p>
+                        <p className="text-2xl font-bold truncate">{topThree[1].name}</p>
                         <p className="text-xl text-primary">{topThree[1].score} points</p>
                     </CardContent>
                 </Card>
             )}
 
-            {topThree.length > 0 && (
-                <Card className="w-72 border-4 border-amber-400 shadow-2xl animate-slide-up order-first md:order-none">
+            {topThree[0] && (
+                <Card className="w-full max-w-[16rem] md:w-72 border-4 border-amber-400 shadow-2xl animate-slide-up order-1">
                      <CardHeader className="p-4">
                         <Trophy className="w-20 h-20 mx-auto text-amber-400" />
                         <CardTitle className="text-5xl">1st</CardTitle>
@@ -607,14 +608,14 @@ const GameOverScreen = ({ players, ownerId, currentSocketId, onPlayAgain }: { pl
                             <AvatarImage src={topThree[0].avatarUrl} />
                             <AvatarFallback className="text-6xl bg-card">{topThree[0].avatarUrl}</AvatarFallback>
                         </Avatar>
-                        <p className="text-3xl font-bold">{topThree[0].name}</p>
+                        <p className="text-3xl font-bold truncate">{topThree[0].name}</p>
                         <p className="text-2xl text-primary">{topThree[0].score} points</p>
                     </CardContent>
                 </Card>
             )}
 
-            {topThree.length > 2 && (
-                 <Card className="w-64 border-4 border-amber-700 shadow-2xl animate-slide-up" style={{ animationDelay: '400ms' }}>
+            {topThree[2] && (
+                 <Card className="w-full max-w-[14rem] md:w-64 border-4 border-amber-700 shadow-2xl animate-slide-up order-3" style={{ animationDelay: '400ms' }}>
                     <CardHeader className="p-4">
                         <Trophy className="w-16 h-16 mx-auto text-amber-700" />
                         <CardTitle className="text-4xl">3rd</CardTitle>
@@ -624,12 +625,38 @@ const GameOverScreen = ({ players, ownerId, currentSocketId, onPlayAgain }: { pl
                             <AvatarImage src={topThree[2].avatarUrl} />
                             <AvatarFallback className="text-5xl bg-card">{topThree[2].avatarUrl}</AvatarFallback>
                         </Avatar>
-                        <p className="text-2xl font-bold">{topThree[2].name}</p>
+                        <p className="text-2xl font-bold truncate">{topThree[2].name}</p>
                         <p className="text-xl text-primary">{topThree[2].score} points</p>
                     </CardContent>
                 </Card>
             )}
         </div>
+
+        {restOfPlayers.length > 0 && (
+            <div className="w-full max-w-md mt-12">
+                 <Card>
+                    <CardHeader><CardTitle className="text-2xl">Leaderboard</CardTitle></CardHeader>
+                    <CardContent className="p-2 md:p-4 text-left">
+                        <ul className="space-y-2">
+                            {restOfPlayers.map((player, index) => (
+                                <li key={player.id} className="flex justify-between items-center p-2 rounded-lg bg-muted/50">
+                                    <div className="flex items-center gap-3">
+                                        <span className="font-bold w-8 text-center text-muted-foreground">{index + 4}.</span>
+                                        <Avatar className="w-10 h-10">
+                                            <AvatarImage src={player.avatarUrl} />
+                                            <AvatarFallback className="text-2xl bg-card">{player.avatarUrl}</AvatarFallback>
+                                        </Avatar>
+                                        <span className="font-medium truncate">{player.name}</span>
+                                    </div>
+                                    <span className="font-bold text-primary">{player.score} points</span>
+                                </li>
+                            ))}
+                        </ul>
+                    </CardContent>
+                 </Card>
+            </div>
+        )}
+
         <div className="mt-12">
             {currentSocketId === ownerId ? (
                 <Button size="lg" onClick={onPlayAgain} className="text-lg h-12">Play Again</Button>
