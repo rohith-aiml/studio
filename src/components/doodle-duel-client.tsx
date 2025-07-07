@@ -87,6 +87,7 @@ type GameState = {
 const ROUND_TIME = 90; // in seconds
 const AI_CHECK_INTERVAL = 15000; // 15 seconds
 const ROUND_OPTIONS = [1, 2, 3, 5, 10];
+const WORD_CHOICE_TIME = 15;
 
 const DRAWING_COLORS = [
   "#000000", "#ef4444", "#fb923c", "#facc15", "#4ade80", "#22d3ee", "#3b82f6", "#a78bfa", "#f472b6", "#ffffff",
@@ -273,8 +274,8 @@ const Scoreboard = ({ players, currentPlayerId }: { players: Player[]; currentPl
 
 const Timer = ({ time }: { time: number }) => (
   <div className="w-full">
-    <div className="flex justify-center items-center gap-2 mb-2 text-xl font-bold text-primary">
-      <Clock className="w-6 h-6" />
+    <div className="flex justify-center items-center gap-2 mb-1 text-lg font-bold text-primary">
+      <Clock className="w-5 h-5" />
       <span>{time}</span>
     </div>
     <Progress value={(time / ROUND_TIME) * 100} className="h-2" />
@@ -291,17 +292,17 @@ const WordDisplay = ({ maskedWord, isDrawing, fullWord }: { maskedWord: string; 
     }, [fullWord, isDrawing]);
     
     return (
-      <div className="text-center py-1 md:py-2">
-        <p className="text-muted-foreground text-xs md:text-sm font-medium">
+      <div className="text-center py-1">
+        <p className="text-muted-foreground text-xs font-medium">
           {isDrawing ? "You are drawing:" : "Guess the word!"}
         </p>
         <div className="flex items-center justify-center gap-2">
-            <p className="text-2xl md:text-4xl font-bold tracking-widest font-headline text-primary transition-all duration-300">
+            <p className="text-xl md:text-3xl font-bold tracking-widest font-headline text-primary transition-all duration-300">
               {isDrawing ? (isWordVisible ? fullWord : '*'.repeat(fullWord.length).split('').join(' ')) : maskedWord}
             </p>
             {isDrawing && fullWord && (
-                <Button onClick={() => setIsWordVisible(!isWordVisible)} size="icon" variant="ghost" className="h-8 w-8 md:h-auto md:w-auto">
-                    {isWordVisible ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                <Button onClick={() => setIsWordVisible(!isWordVisible)} size="icon" variant="ghost" className="h-8 w-8">
+                    {isWordVisible ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     <span className="sr-only">{isWordVisible ? 'Hide word' : 'Show word'}</span>
                 </Button>
             )}
@@ -445,7 +446,7 @@ const DrawingCanvas = React.forwardRef<HTMLCanvasElement, {
                 onTouchStart={startDrawing}
                 onTouchMove={draw}
                 onTouchEnd={stopDrawing}
-                className={cn("bg-white rounded-lg shadow-inner w-full h-full", isDrawingPlayer ? "cursor-crosshair touch-none" : "cursor-not-allowed")}
+                className={cn("bg-white rounded-lg shadow-inner w-full h-full", isDrawingPlayer ? "cursor-crosshair" : "cursor-not-allowed")}
             />
         );
     }
@@ -540,9 +541,10 @@ const ChatBox = ({ messages, onSendMessage, disabled }: { messages: Message[], o
 const GameOverScreen = ({ players, ownerId, currentSocketId, onPlayAgain }: { players: Player[]; ownerId: string | null; currentSocketId: string | null; onPlayAgain: () => void; }) => {
     const winners = [...players].sort((a, b) => b.score - a.score);
     const topThree = winners.slice(0, 3);
-    const restOfPlayers = winners.slice(3);
     const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
     const [showConfetti, setShowConfetti] = useState(false);
+    const gameOverAudioRef = useRef<HTMLAudioElement>(null);
+
 
     useEffect(() => {
         if (typeof window !== 'undefined') {
@@ -552,6 +554,9 @@ const GameOverScreen = ({ players, ownerId, currentSocketId, onPlayAgain }: { pl
             });
         }
         const timer = setTimeout(() => setShowConfetti(true), 500);
+        
+        gameOverAudioRef.current?.play().catch(e => console.error("Error playing sound:", e));
+
         return () => clearTimeout(timer);
     }, []);
 
@@ -629,16 +634,16 @@ const GameOverScreen = ({ players, ownerId, currentSocketId, onPlayAgain }: { pl
             )}
         </div>
 
-        {restOfPlayers.length > 0 && (
+        {winners.length > 3 && (
             <div className="w-full max-w-md mt-12">
                  <Card>
-                    <CardHeader><CardTitle className="text-2xl">Leaderboard</CardTitle></CardHeader>
+                    <CardHeader><CardTitle className="text-2xl">Final Leaderboard</CardTitle></CardHeader>
                     <CardContent className="p-2 md:p-4 text-left">
                         <ul className="space-y-2">
-                            {restOfPlayers.map((player, index) => (
+                            {winners.map((player, index) => (
                                 <li key={player.id} className="flex justify-between items-center p-2 rounded-lg bg-muted/50">
                                     <div className="flex items-center gap-3">
-                                        <span className="font-bold w-8 text-center text-muted-foreground">{index + 4}.</span>
+                                        <span className="font-bold w-8 text-center text-muted-foreground">{index + 1}.</span>
                                         <Avatar className="w-10 h-10">
                                             <AvatarImage src={player.avatarUrl} />
                                             <AvatarFallback className="text-2xl bg-card">{player.avatarUrl}</AvatarFallback>
@@ -661,6 +666,7 @@ const GameOverScreen = ({ players, ownerId, currentSocketId, onPlayAgain }: { pl
                 <p className="text-lg text-muted-foreground">Waiting for the host to start a new game...</p>
             )}
         </div>
+        <audio ref={gameOverAudioRef} src="/game-over.mp3" preload="auto" className="hidden" />
       </div>
     );
 };
@@ -687,6 +693,7 @@ export default function DoodleDuelClient() {
   });
   const [fullWord, setFullWord] = useState("");
   const [wordChoices, setWordChoices] = useState<string[]>([]);
+  const [wordChoiceCountdown, setWordChoiceCountdown] = useState(WORD_CHOICE_TIME);
 
   const [currentColor, setCurrentColor] = useState(DRAWING_COLORS[0]);
   const [currentLineWidth, setCurrentLineWidth] = useState(BRUSH_SIZES[1]);
@@ -817,6 +824,23 @@ export default function DoodleDuelClient() {
     }
     return () => clearInterval(aiCheckIntervalRef.current);
   }, [gameState.isRoundActive, isDrawer, gameState.drawingHistory, socket]);
+  
+  useEffect(() => {
+    if (isDrawer && wordChoices.length > 0) {
+        setWordChoiceCountdown(WORD_CHOICE_TIME);
+        const timer = setInterval(() => {
+            setWordChoiceCountdown(prev => {
+                if (prev <= 1) {
+                    clearInterval(timer);
+                    return 0;
+                }
+                return prev - 1;
+            });
+        }, 1000);
+
+        return () => clearInterval(timer);
+    }
+  }, [isDrawer, wordChoices]);
 
   // --- Callbacks & Handlers ---
 
@@ -873,9 +897,10 @@ export default function DoodleDuelClient() {
       <Dialog open={isDrawer && wordChoices.length > 0}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Choose a word to draw</DialogTitle>
-            <DialogDescription>Select one of the words below. Only you can see them.</DialogDescription>
+            <DialogTitle>Choose a word to draw ({wordChoiceCountdown}s)</DialogTitle>
+            <DialogDescription>Select one of the words below. A word will be picked if time runs out.</DialogDescription>
           </DialogHeader>
+           <Progress value={(wordChoiceCountdown / WORD_CHOICE_TIME) * 100} className="h-2 mb-2" />
           <div className="grid grid-cols-2 gap-4 py-4">
             {wordChoices.map((word) => (
               <Button key={word} onClick={() => handleWordChoice(word)} variant="outline" className="h-12 text-base">{word}</Button>
@@ -888,7 +913,10 @@ export default function DoodleDuelClient() {
           "flex flex-col md:flex-row h-dvh max-h-dvh overflow-hidden bg-background p-2 md:p-4 gap-4",
           isCanvasFullscreen && "fixed inset-0 z-50 p-4"
         )}>
-        <div ref={canvasAreaRef} onClick={handleCanvasAreaClick} className={cn("flex flex-col flex-1 min-h-0 items-center justify-center gap-2", isDrawer && "touch-none")}>
+        <div ref={canvasAreaRef} onClick={handleCanvasAreaClick} className={cn(
+            "flex flex-col h-[60%] md:h-full md:flex-1 min-h-0 items-center justify-center gap-2", 
+            isDrawer && "touch-none"
+        )}>
             {isCanvasFullscreen && (
               <Button onClick={toggleFullscreen} variant="ghost" size="icon" className="absolute top-4 right-4 z-50 bg-background/50 hover:bg-background">
                 <X />
@@ -929,7 +957,7 @@ export default function DoodleDuelClient() {
             ) : (
                 <>
                     <div className="w-full max-w-2xl flex-shrink-0">
-                        {gameState.currentRound > 0 && <div className="text-center text-sm font-semibold text-muted-foreground mb-1">{`Round ${gameState.currentRound} / ${gameState.gameSettings.totalRounds}`}</div>}
+                        {gameState.currentRound > 0 && <div className="text-center text-xs font-semibold text-muted-foreground">{`Round ${gameState.currentRound} / ${gameState.gameSettings.totalRounds}`}</div>}
                         <Timer time={gameState.roundTimer} />
                         <WordDisplay maskedWord={gameState.currentWord} isDrawing={isDrawer} fullWord={fullWord} />
                     </div>
@@ -942,7 +970,7 @@ export default function DoodleDuelClient() {
                 </>
             )}
         </div>
-        <div className={cn("w-full md:w-[320px] lg:w-[350px] flex flex-col gap-4 min-h-0", isCanvasFullscreen ? "hidden" : "flex")}>
+        <div className={cn("w-full md:w-[320px] lg:w-[350px] flex flex-col gap-4 min-h-0 h-[40%] md:h-full", isCanvasFullscreen ? "hidden" : "flex")}>
           <RoomInfo roomId={roomId} toast={toast} />
           
           <div className="hidden md:flex flex-col gap-4 flex-1 min-h-0">
@@ -950,7 +978,7 @@ export default function DoodleDuelClient() {
             <ChatBox messages={gameState.messages} onSendMessage={handleGuess} disabled={isDrawer || (me?.hasGuessed ?? false) || me?.disconnected === true} />
           </div>
 
-          <div className="flex-1 md:hidden min-h-0">
+          <div className="h-full md:hidden min-h-0">
              <Tabs defaultValue="chat" className="flex flex-col h-full">
                 <TabsList className="grid w-full grid-cols-2">
                   <TabsTrigger value="chat">Chat</TabsTrigger>
