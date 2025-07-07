@@ -359,7 +359,7 @@ app.prepare().then(() => {
         if (!currentRoomId) return;
         const room = gameRooms.get(currentRoomId);
         if (room && socket.id === room.gameState.ownerId && !room.gameState.isRoundActive) {
-             const activePlayers = room.gameState.players.filter(p => !p.disconnected);
+            const activePlayers = room.gameState.players.filter(p => !p.disconnected);
             if (activePlayers.length < 2) {
                 socket.emit("error", "You need at least 2 players to start.");
                 return;
@@ -372,13 +372,14 @@ app.prepare().then(() => {
     
             // Make the owner the first drawer
             const ownerIndex = activePlayers.findIndex(p => p.id === socket.id);
-            if(ownerIndex !== 0) {
-                const owner = activePlayers.splice(ownerIndex, 1)[0];
+            if(ownerIndex > 0) {
+                const [owner] = activePlayers.splice(ownerIndex, 1);
                 activePlayers.unshift(owner);
-                 room.gameState.players = room.gameState.players.map(p => activePlayers.find(ap => ap.id === p.id) || p).filter(p => p.disconnected === false);
-                 room.gameState.players.push(...room.gameState.players.filter(p => p.disconnected === true));
             }
+            const disconnectedPlayers = room.gameState.players.filter(p => p.disconnected);
+            room.gameState.players = [...activePlayers, ...disconnectedPlayers];
             
+            // This sets the drawer to be the player before the owner, so startRound will pick the owner.
             room.gameState.drawerId = activePlayers[activePlayers.length - 1].id;
     
             startRound(currentRoomId);

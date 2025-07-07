@@ -659,6 +659,12 @@ export default function DoodleDuelClient() {
 
   const { toast } = useToast();
 
+  const gameStateRef = useRef(gameState);
+  useEffect(() => {
+    gameStateRef.current = gameState;
+  }, [gameState]);
+
+
   const me = gameState.players.find(p => p.id === socket?.id);
   const isOwner = me?.id === gameState.ownerId;
   const isDrawer = me?.isDrawing ?? false;
@@ -674,22 +680,22 @@ export default function DoodleDuelClient() {
   useEffect(() => {
     if (!socket) return;
     
-    socket.on("connect", () => console.log("Connected to server!"));
-    socket.on("roomCreated", (newRoomId: string) => {
+    const onConnect = () => console.log("Connected to server!");
+    const onRoomCreated = (newRoomId: string) => {
         setRoomId(newRoomId);
         window.history.pushState({}, '', `/?roomId=${newRoomId}`);
         toast({ title: "Room Created!", description: `You are in room ${newRoomId}. Share the link to invite others!` });
-    });
-    socket.on("gameStateUpdate", (newGameState: GameState) => {
+    };
+    const onGameStateUpdate = (newGameState: GameState) => {
         setGameState(newGameState);
         if (!newGameState.isRoundActive) {
              setWordChoices([]);
              setFullWord("");
         }
-    });
-    socket.on("timerUpdate", (time: number) => setGameState(prev => ({...prev, roundTimer: time})));
-    socket.on("pathStarted", (path: DrawingPath) => setGameState(prev => ({...prev, drawingHistory: [...prev.drawingHistory, path]})));
-    socket.on("pathUpdated", (path: DrawingPath) => {
+    };
+    const onTimerUpdate = (time: number) => setGameState(prev => ({...prev, roundTimer: time}));
+    const onPathStarted = (path: DrawingPath) => setGameState(prev => ({...prev, drawingHistory: [...prev.drawingHistory, path]}));
+    const onPathUpdated = (path: DrawingPath) => {
         setGameState(prev => {
             const newHistory = [...prev.drawingHistory];
             if (newHistory.length > 0) {
@@ -697,37 +703,37 @@ export default function DoodleDuelClient() {
             }
             return {...prev, drawingHistory: newHistory};
         });
-    });
-    socket.on("drawingUndone", () => setGameState(prev => ({ ...prev, drawingHistory: prev.drawingHistory.slice(0, -1) })));
-    socket.on("canvasCleared", () => setGameState(prev => ({...prev, drawingHistory: []})));
-    socket.on("drawerWord", (word: string) => setFullWord(word));
-    socket.on("promptWordChoice", (choices: string[]) => setWordChoices(choices));
-    socket.on("roundEnd", ({ word }: { word: string }) => {
-        const player = gameState.players.find(p => p.id === socket.id);
+    };
+    const onDrawingUndone = () => setGameState(prev => ({ ...prev, drawingHistory: prev.drawingHistory.slice(0, -1) }));
+    const onCanvasCleared = () => setGameState(prev => ({...prev, drawingHistory: []}));
+    const onDrawerWord = (word: string) => setFullWord(word);
+    const onPromptWordChoice = (choices: string[]) => setWordChoices(choices);
+    const onRoundEnd = ({ word }: { word: string }) => {
+        const player = gameStateRef.current.players.find(p => p.id === socket.id);
         toast({
             title: player?.hasGuessed ? "Round Over!" : "Time's Up!",
             description: `The word was: ${word}`,
             duration: 5000,
             icon: player?.hasGuessed ? <PartyPopper className="text-green-500" /> : <Clock />,
         });
-    });
-    socket.on("aiSuggestion", (result: AnalyzeDrawingHistoryOutput) => {
+    };
+    const onAiSuggestion = (result: AnalyzeDrawingHistoryOutput) => {
         notificationSoundRef.current?.play().catch(e => console.error("Error playing sound:", e));
         toast({
             title: "AI Suggestion",
             description: (<div className="flex items-center gap-2"><Vote /><div><p>{result.reason}</p><Button size="sm" className="mt-2">Vote to Skip</Button></div></div>),
             duration: 10000,
         });
-    });
-    socket.on("closeGuess", (message: string) => {
+    };
+    const onCloseGuess = (message: string) => {
         notificationSoundRef.current?.play().catch(e => console.error("Error playing sound:", e));
         toast({
             title: "Hint",
             description: (<div className="flex items-center gap-2"><Sparkles className="text-yellow-400" /><span>{message}</span></div>),
             duration: 3000,
         });
-    });
-    socket.on("error", (message: string) => {
+    };
+    const onError = (message: string) => {
         toast({ title: "Error", description: message, variant: "destructive" });
         if (message.includes("Room not found") || message.includes("active in this room")) {
             setTimeout(() => {
@@ -736,25 +742,40 @@ export default function DoodleDuelClient() {
                 setRoomId(null);
             }, 2000);
         }
-    });
+    };
+    
+    socket.on("connect", onConnect);
+    socket.on("roomCreated", onRoomCreated);
+    socket.on("gameStateUpdate", onGameStateUpdate);
+    socket.on("timerUpdate", onTimerUpdate);
+    socket.on("pathStarted", onPathStarted);
+    socket.on("pathUpdated", onPathUpdated);
+    socket.on("drawingUndone", onDrawingUndone);
+    socket.on("canvasCleared", onCanvasCleared);
+    socket.on("drawerWord", onDrawerWord);
+    socket.on("promptWordChoice", onPromptWordChoice);
+    socket.on("roundEnd", onRoundEnd);
+    socket.on("aiSuggestion", onAiSuggestion);
+    socket.on("closeGuess", onCloseGuess);
+    socket.on("error", onError);
 
     return () => {
-        socket.off("connect");
-        socket.off("roomCreated");
-        socket.off("gameStateUpdate");
-        socket.off("timerUpdate");
-        socket.off("pathStarted");
-        socket.off("pathUpdated");
-        socket.off("drawingUndone");
-        socket.off("canvasCleared");
-        socket.off("drawerWord");
-        socket.off("promptWordChoice");
-        socket.off("roundEnd");
-        socket.off("aiSuggestion");
-        socket.off("closeGuess");
-        socket.off("error");
+        socket.off("connect", onConnect);
+        socket.off("roomCreated", onRoomCreated);
+        socket.off("gameStateUpdate", onGameStateUpdate);
+        socket.off("timerUpdate", onTimerUpdate);
+        socket.off("pathStarted", onPathStarted);
+        socket.off("pathUpdated", onPathUpdated);
+        socket.off("drawingUndone", onDrawingUndone);
+        socket.off("canvasCleared", onCanvasCleared);
+        socket.off("drawerWord", onDrawerWord);
+        socket.off("promptWordChoice", onPromptWordChoice);
+        socket.off("roundEnd", onRoundEnd);
+        socket.off("aiSuggestion", onAiSuggestion);
+        socket.off("closeGuess", onCloseGuess);
+        socket.off("error", onError);
     };
-  }, [socket, toast, gameState.players]);
+  }, [socket, toast]);
   
   useEffect(() => {
     if (canvasRef.current && (canvasRef.current as any).updateBrush) {
@@ -940,7 +961,7 @@ export default function DoodleDuelClient() {
               </div>
               <Button onClick={copyInvite} size="sm" variant="outline">
                   <ClipboardCopy className="w-4 h-4 md:mr-2" />
-                  <span className="hidden md:inline">Copy Invite</span>
+                  <span className="hidden md:inline">Copy Link</span>
               </Button>
             </div>
           </div>
@@ -992,5 +1013,3 @@ export default function DoodleDuelClient() {
     </>
   );
 }
-
-    
