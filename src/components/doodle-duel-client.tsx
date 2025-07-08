@@ -343,7 +343,6 @@ const DrawingCanvas = React.forwardRef<HTMLCanvasElement, {
                 return null;
             }
             
-            const dpr = window.devicePixelRatio || 1;
             return { 
                 x: (clientX - rect.left), 
                 y: (clientY - rect.top)
@@ -656,7 +655,7 @@ const GameOverScreen = ({ players, ownerId, currentSocketId, onPlayAgain }: { pl
                 <p className="text-lg text-muted-foreground">Waiting for the host to start a new game...</p>
             )}
         </div>
-        <audio ref={gameOverAudioRef} src="/game-over.mp3" preload="auto" className="hidden" />
+        {/* <audio ref={gameOverAudioRef} src="/game-over.mp3" preload="auto" className="hidden" /> */}
       </div>
     );
 };
@@ -710,7 +709,6 @@ export default function DoodleDuelClient() {
   const isOwner = me?.id === gameState.ownerId;
   const isDrawer = me?.isDrawing ?? false;
   const guessInputDisabled = isDrawer || (me?.hasGuessed ?? false) || me?.disconnected === true;
-  const isMobileGuesser = isMobile && !isDrawer && gameState.isRoundActive && !gameState.isGameOver;
 
   // --- Effects ---
 
@@ -931,7 +929,7 @@ export default function DoodleDuelClient() {
     e.preventDefault();
     handleGuess(mobileGuess);
     setMobileGuess("");
-  }
+  };
 
   const handlePlayAgain = () => socket?.emit("playAgain");
   const handleWordChoice = (word: string) => {
@@ -953,50 +951,12 @@ export default function DoodleDuelClient() {
             description: "Invite link copied to clipboard.",
         });
     });
-  }
+  };
 
   if (!name) return <JoinScreen onJoin={handleJoin} />;
   
   if (gameState.isGameOver) {
     return <GameOverScreen players={gameState.players} ownerId={gameState.ownerId} currentSocketId={socket?.id ?? null} onPlayAgain={handlePlayAgain} />;
-  }
-
-  if (isMobileGuesser) {
-    return (
-      <div className="flex h-dvh flex-col bg-background p-2">
-        <div className="flex items-center justify-between gap-2 py-1">
-            <div className="flex items-center gap-2 text-lg font-bold text-primary">
-                <Clock className="w-5 h-5" />
-                <span>{gameState.roundTimer}</span>
-            </div>
-            <WordDisplay maskedWord={gameState.currentWord} isDrawing={isDrawer} fullWord={fullWord} />
-        </div>
-        <div className="flex-1 relative min-h-0">
-            <DrawingCanvas ref={canvasRef} onDrawStart={()=>{}} onDrawing={()=>{}} isDrawingPlayer={false} drawingHistory={gameState.drawingHistory} />
-        </div>
-        <div className="flex-shrink-0 py-2">
-            <form onSubmit={handleMobileGuessSubmit}>
-                <div className="relative">
-                    <Input
-                        placeholder={guessInputDisabled ? "You guessed it!" : "Type your guess..."}
-                        value={mobileGuess}
-                        onChange={(e) => setMobileGuess(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' && !e.shiftKey) {
-                              e.preventDefault();
-                              handleMobileGuessSubmit(e);
-                          }
-                        }}
-                        disabled={guessInputDisabled}
-                    />
-                    <Button type="submit" size="icon" className="absolute right-1 top-1/2 -translate-y-1/2 h-8 w-8" disabled={guessInputDisabled}>
-                        <ChevronRight className="w-4 h-4" />
-                    </Button>
-                </div>
-            </form>
-        </div>
-      </div>
-    )
   }
 
   const activePlayers = gameState.players.filter(p => !p.disconnected);
@@ -1093,9 +1053,65 @@ export default function DoodleDuelClient() {
                   </Card>
               )}
           </div>
+      ) : isMobile ? (
+        <div className="flex h-full flex-col">
+            {/* Top Bar */}
+            <div className="flex-shrink-0 flex items-center justify-between gap-2 p-2 border-b">
+                <div className={cn("flex items-center gap-2 font-bold", gameState.roundTimer <= 15 ? 'text-red-500' : 'text-primary')}>
+                    <Clock className="w-5 h-5" />
+                    <span>{gameState.roundTimer}</span>
+                </div>
+                <WordDisplay maskedWord={gameState.currentWord} isDrawing={isDrawer} fullWord={fullWord} />
+                <div className="flex items-center gap-1">
+                    <p className="text-sm font-medium text-muted-foreground">ID: {roomId}</p>
+                    <Button onClick={copyInvite} size="icon" variant="ghost" className="w-8 h-8">
+                        <ClipboardCopy className="w-4 h-4" />
+                        <span className="sr-only">Copy Link</span>
+                    </Button>
+                </div>
+            </div>
+
+            {/* Canvas */}
+            <div className="flex-1 relative min-h-0">
+                <DrawingCanvas ref={canvasRef} onDrawStart={handleStartPath} onDrawing={handleDrawPath} isDrawingPlayer={isDrawer} drawingHistory={gameState.drawingHistory}/>
+            </div>
+
+            {/* Player List & Chat History */}
+            <div className="flex-shrink-0 flex h-[25vh] max-h-48 gap-2 p-2 border-t">
+                <div className="w-1/3 h-full"><Scoreboard players={gameState.players} currentPlayerId={socket?.id ?? null} /></div>
+                <div className="w-2/3 h-full"><ChatBox messages={gameState.messages} showForm={false} /></div>
+            </div>
+
+            {/* Input or Toolbar */}
+            <div className="flex-shrink-0 p-2 border-t bg-background">
+                {isDrawer ? (
+                     <Toolbar color={currentColor} setColor={setCurrentColor} lineWidth={currentLineWidth} setLineWidth={setCurrentLineWidth} onUndo={handleUndo} onClear={handleClear} disabled={!isDrawer} />
+                ) : (
+                    <form onSubmit={handleMobileGuessSubmit} className="relative"
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                                e.preventDefault();
+                                handleMobileGuessSubmit(e);
+                            }
+                        }}
+                    >
+                        <Input
+                            placeholder={guessInputDisabled ? "You've guessed it!" : "Type your guess..."}
+                            value={mobileGuess}
+                            onChange={(e) => setMobileGuess(e.target.value)}
+                            disabled={guessInputDisabled}
+                            className="pr-12"
+                        />
+                        <Button type="submit" size="icon" className="absolute right-1 top-1/2 -translate-y-1/2 h-8 w-8" disabled={guessInputDisabled}>
+                            <ChevronRight className="w-4 h-4" />
+                        </Button>
+                    </form>
+                )}
+            </div>
+        </div>
       ) : (
         <>
-            {/* Top Bar */}
+            {/* Desktop Top Bar */}
             <div className="flex-shrink-0">
                 <div className="flex items-center justify-between gap-4 p-2">
                     <div className={cn("flex items-center gap-2 text-lg font-bold text-primary w-1/4 transition-colors", gameState.roundTimer <= 15 && "text-red-600 dark:text-red-500")}>
@@ -1104,18 +1120,18 @@ export default function DoodleDuelClient() {
                     </div>
                     <WordDisplay maskedWord={gameState.currentWord} isDrawing={isDrawer} fullWord={fullWord} />
                     <div className="flex items-center justify-end gap-2 w-1/4">
-                        <span className="text-sm font-bold hidden md:inline">ID: {roomId}</span>
+                        <span className="text-sm font-bold">ID: {roomId}</span>
                         <Button onClick={copyInvite} size="sm" variant="outline">
-                            <ClipboardCopy className="w-4 h-4 md:mr-2" />
-                            <span className="hidden md:inline">Copy Link</span>
+                            <ClipboardCopy className="w-4 h-4 mr-2" />
+                            <span>Copy Link</span>
                         </Button>
                     </div>
                 </div>
             </div>
           
-            {/* Desktop Layout */}
-            <div className="flex-1 hidden md:flex flex-row gap-4 min-h-0 p-2 md:p-4">
-                <div className="w-full md:w-[280px] flex-shrink-0">
+            {/* Desktop 3-column Layout */}
+            <div className="flex-1 flex flex-row gap-4 min-h-0 p-2 md:p-4">
+                <div className="w-[280px] flex-shrink-0">
                     <Scoreboard players={gameState.players} currentPlayerId={socket?.id ?? null} />
                 </div>
                 <div className="flex flex-col min-h-0 gap-2 flex-1">
@@ -1124,23 +1140,15 @@ export default function DoodleDuelClient() {
                     </div>
                     {isDrawer && <Toolbar color={currentColor} setColor={setCurrentColor} lineWidth={currentLineWidth} setLineWidth={setCurrentLineWidth} onUndo={handleUndo} onClear={handleClear} disabled={!isDrawer} />}
                 </div>
-                <div className="w-full md:w-[320px] lg:w-[350px] flex-shrink-0">
+                <div className="w-[320px] lg:w-[350px] flex-shrink-0">
                     <ChatBox messages={gameState.messages} onSendMessage={handleGuess} disabled={guessInputDisabled} showForm={!isDrawer} />
                 </div>
-            </div>
-
-            {/* Mobile Drawer Layout */}
-            <div className="flex flex-col flex-1 md:hidden min-h-0 p-2 gap-2">
-                <div className="flex-1 relative min-h-0">
-                     <DrawingCanvas ref={canvasRef} onDrawStart={handleStartPath} onDrawing={handleDrawPath} isDrawingPlayer={isDrawer} drawingHistory={gameState.drawingHistory}/>
-                </div>
-                {isDrawer && <Toolbar color={currentColor} setColor={setCurrentColor} lineWidth={currentLineWidth} setLineWidth={setCurrentLineWidth} onUndo={handleUndo} onClear={handleClear} disabled={!isDrawer} />}
             </div>
         </>
       )}
       </main>
 
-      <div className="pointer-events-none fixed bottom-4 right-4 z-50 flex w-full max-w-xs flex-col items-end gap-2">
+      <div className="pointer-events-none fixed bottom-16 right-4 z-50 flex w-full max-w-xs flex-col items-end gap-2 md:bottom-4">
           {notifications.map((notif) => (
             <div
               key={notif.id}
@@ -1159,9 +1167,8 @@ export default function DoodleDuelClient() {
           ))}
         </div>
 
-      <audio ref={notificationSoundRef} src="/notification.mp3" preload="auto" className="hidden" />
+      {/* <audio ref={notificationSoundRef} src="/notification.mp3" preload="auto" className="hidden" /> */}
       <Toaster />
     </>
   );
 }
-
