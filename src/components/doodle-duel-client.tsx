@@ -206,8 +206,8 @@ const JoinScreen = ({ onJoin }: { onJoin: (name: string, avatarUrl: string, room
 
 const Scoreboard = ({ players, currentPlayerId }: { players: Player[]; currentPlayerId: string | null; }) => (
   <Card className="h-full flex flex-col min-h-0">
-    <CardHeader className="p-2">
-      <CardTitle className="flex items-center gap-2 text-base">
+    <CardHeader className="p-1">
+      <CardTitle className="flex items-center gap-1 text-sm">
         <Users className="text-primary w-4 h-4" /> Players
       </CardTitle>
     </CardHeader>
@@ -215,7 +215,7 @@ const Scoreboard = ({ players, currentPlayerId }: { players: Player[]; currentPl
       <ul className="space-y-1">
         {players.sort((a, b) => b.score - a.score).map((p) => (
           <li key={p.id || p.name} className={cn(
-              "flex items-center justify-between p-1.5 rounded-md transition-all",
+              "flex items-center justify-between p-1 rounded-md transition-all",
               p.id === currentPlayerId && "bg-accent/50",
               p.disconnected && "opacity-50",
               p.hasGuessed && !p.isDrawing && "bg-green-100 dark:bg-green-900"
@@ -1057,13 +1057,15 @@ export default function DoodleDuelClient() {
         <div className="flex h-full flex-col">
             {/* Top Bar */}
             <div className="flex-shrink-0 flex items-center justify-between gap-2 p-2 border-b">
-                <div className={cn("flex items-center gap-2 font-bold", gameState.roundTimer <= 15 ? 'text-red-500' : 'text-primary')}>
+                <div className={cn("flex items-center gap-2 font-bold w-1/4", gameState.roundTimer <= 15 ? 'text-red-500' : 'text-primary')}>
                     <Clock className="w-5 h-5" />
                     <span>{gameState.roundTimer}</span>
                 </div>
-                <WordDisplay maskedWord={gameState.currentWord} isDrawing={isDrawer} fullWord={fullWord} />
-                <div className="flex items-center gap-1">
-                    <p className="text-sm font-medium text-muted-foreground">ID: {roomId}</p>
+                <div className="flex-grow">
+                    <WordDisplay maskedWord={gameState.currentWord} isDrawing={isDrawer} fullWord={fullWord} />
+                </div>
+                <div className="flex items-center justify-end gap-1 w-1/4">
+                    <p className="text-sm font-medium text-muted-foreground hidden sm:inline">ID: {roomId}</p>
                     <Button onClick={copyInvite} size="icon" variant="ghost" className="w-8 h-8">
                         <ClipboardCopy className="w-4 h-4" />
                         <span className="sr-only">Copy Link</span>
@@ -1071,15 +1073,15 @@ export default function DoodleDuelClient() {
                 </div>
             </div>
 
-            {/* Canvas */}
-            <div className="flex-1 relative min-h-0">
+            {/* Canvas Area - fixed height so it doesn't shrink */}
+            <div className="flex-shrink-0 relative h-[40vh] bg-slate-100 dark:bg-slate-800">
                 <DrawingCanvas ref={canvasRef} onDrawStart={handleStartPath} onDrawing={handleDrawPath} isDrawingPlayer={isDrawer} drawingHistory={gameState.drawingHistory}/>
             </div>
-
-            {/* Player List & Chat History */}
-            <div className="flex-shrink-0 flex h-[25vh] max-h-48 gap-2 p-2 border-t">
-                <div className="w-1/3 h-full"><Scoreboard players={gameState.players} currentPlayerId={socket?.id ?? null} /></div>
-                <div className="w-2/3 h-full"><ChatBox messages={gameState.messages} showForm={false} /></div>
+            
+            {/* Player List & Chat History - This will now be the flexible part that shrinks */}
+            <div className="flex-1 flex gap-2 p-2 border-t min-h-0">
+                <div className="w-2/5 h-full"><Scoreboard players={gameState.players} currentPlayerId={socket?.id ?? null} /></div>
+                <div className="w-3/5 h-full"><ChatBox messages={gameState.messages} showForm={false} /></div>
             </div>
 
             {/* Input or Toolbar */}
@@ -1087,14 +1089,7 @@ export default function DoodleDuelClient() {
                 {isDrawer ? (
                      <Toolbar color={currentColor} setColor={setCurrentColor} lineWidth={currentLineWidth} setLineWidth={setCurrentLineWidth} onUndo={handleUndo} onClear={handleClear} disabled={!isDrawer} />
                 ) : (
-                    <form onSubmit={handleMobileGuessSubmit} className="relative"
-                        onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                                e.preventDefault();
-                                handleMobileGuessSubmit(e);
-                            }
-                        }}
-                    >
+                    <form onSubmit={handleMobileGuessSubmit} className="relative">
                         <Input
                             placeholder={guessInputDisabled ? "You've guessed it!" : "Type your guess..."}
                             value={mobileGuess}
