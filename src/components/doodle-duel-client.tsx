@@ -927,7 +927,6 @@ export default function DoodleDuelClient() {
     if (guess && !guessInputDisabled) {
       handleGuess(guess);
       setMobileGuess("");
-      // Re-focus the input to keep the keyboard visible on mobile
       mobileInputRef.current?.focus();
     }
   };
@@ -1076,10 +1075,16 @@ export default function DoodleDuelClient() {
 
           {/* Main Content Area */}
           <div className="flex-grow flex flex-col min-h-0 p-2 gap-2">
-            <div className={cn("relative bg-slate-100 dark:bg-slate-800 rounded-lg transition-all duration-300", isInputFocused && !isDrawer ? "flex-grow min-h-0" : "h-[40%]")}>
+            <div className={cn(
+              "relative bg-slate-100 dark:bg-slate-800 rounded-lg",
+              isInputFocused && !isDrawer ? "flex-grow min-h-0" : "h-[40%] flex-shrink-0"
+            )}>
                 <DrawingCanvas ref={canvasRef} onDrawStart={handleStartPath} onDrawing={handleDrawPath} isDrawingPlayer={isDrawer} drawingHistory={gameState.drawingHistory}/>
             </div>
-            <div className={cn("flex-shrink-0 flex gap-2 h-[calc(60%-1.5rem)] min-h-0", isInputFocused && !isDrawer && "hidden")}>
+            <div className={cn(
+              "flex gap-2 min-h-0",
+              isInputFocused && !isDrawer ? "hidden" : "flex-grow"
+            )}>
                 <div className="w-2/5 h-full"><Scoreboard players={gameState.players} currentPlayerId={socket?.id ?? null} /></div>
                 <div className="w-3/5 h-full"><ChatBox messages={gameState.messages} showForm={false} /></div>
             </div>
@@ -1098,7 +1103,6 @@ export default function DoodleDuelClient() {
                           onChange={(e) => setMobileGuess(e.target.value)}
                           disabled={guessInputDisabled}
                           onFocus={() => setIsInputFocused(true)}
-                          onBlur={() => setIsInputFocused(false)}
                           className="pr-12"
                           autoCapitalize="off"
                           autoComplete="off"
