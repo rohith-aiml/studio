@@ -403,7 +403,10 @@ const DrawingCanvas = React.forwardRef<HTMLCanvasElement, {
                 onTouchStart={(e) => { e.preventDefault(); startDrawing(e); }}
                 onTouchMove={(e) => { e.preventDefault(); draw(e); }}
                 onTouchEnd={(e) => { e.preventDefault(); stopDrawing(); }}
-                className={cn("bg-white rounded-lg shadow-inner w-full h-full", isDrawingPlayer ? "cursor-crosshair touch-none" : "cursor-not-allowed")}
+                className={cn(
+                    "bg-white rounded-lg shadow-inner w-full h-full", 
+                    isDrawingPlayer ? "cursor-crosshair touch-none" : "cursor-not-allowed"
+                )}
             />
         );
     }
@@ -447,7 +450,7 @@ const Toolbar = ({ color, setColor, lineWidth, setLineWidth, onUndo, onClear, di
   </Card>
 );
 
-const ChatBox = ({ messages, onSendMessage, disabled }: { messages: Message[], onSendMessage: (msg: string) => void, disabled: boolean }) => {
+const ChatBox = ({ messages, onSendMessage, disabled, showForm = true }: { messages: Message[], onSendMessage?: (msg: string) => void, disabled?: boolean, showForm?: boolean }) => {
     const [message, setMessage] = useState("");
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -456,7 +459,7 @@ const ChatBox = ({ messages, onSendMessage, disabled }: { messages: Message[], o
     }, [messages]);
 
     const sendMessage = () => {
-        if (message.trim()) {
+        if (message.trim() && onSendMessage) {
             onSendMessage(message.trim());
             setMessage("");
         }
@@ -489,20 +492,22 @@ const ChatBox = ({ messages, onSendMessage, disabled }: { messages: Message[], o
                 ))}
                 <div ref={messagesEndRef} />
             </CardContent>
-            <form onSubmit={handleSubmit} className="p-2 border-t">
-                <div className="relative">
-                    <Input
-                        placeholder={disabled ? "Only guessers can chat" : "Type your guess..."}
-                        value={message}
-                        onChange={(e) => setMessage(e.target.value)}
-                        onKeyDown={handleKeyDown}
-                        disabled={disabled}
-                    />
-                    <Button type="submit" size="icon" className="absolute right-1 top-1/2 -translate-y-1/2 h-8 w-8" disabled={disabled}>
-                        <ChevronRight className="w-4 h-4" />
-                    </Button>
-                </div>
-            </form>
+            {showForm && (
+                <form onSubmit={handleSubmit} className="p-2 border-t">
+                    <div className="relative">
+                        <Input
+                            placeholder={disabled ? "Only guessers can chat" : "Type your guess..."}
+                            value={message}
+                            onChange={(e) => setMessage(e.target.value)}
+                            onKeyDown={handleKeyDown}
+                            disabled={disabled}
+                        />
+                        <Button type="submit" size="icon" className="absolute right-1 top-1/2 -translate-y-1/2 h-8 w-8" disabled={disabled}>
+                            <ChevronRight className="w-4 h-4" />
+                        </Button>
+                    </div>
+                </form>
+            )}
         </Card>
     );
 };
@@ -669,6 +674,7 @@ export default function DoodleDuelClient() {
 
   const [selectedRounds, setSelectedRounds] = useState(ROUND_OPTIONS[2]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [mobileGuess, setMobileGuess] = useState("");
   
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const aiCheckIntervalRef = useRef<NodeJS.Timeout>();
@@ -693,20 +699,7 @@ export default function DoodleDuelClient() {
     const newSocket = io();
     setSocket(newSocket);
 
-    const onGameStateUpdate = (newGameState: GameState) => {
-      setGameState(newGameState);
-      if (newGameState.isRoundActive !== gameStateRef.current.isRoundActive && newGameState.isRoundActive) {
-          // New round has started
-      }
-      if (!newGameState.isRoundActive) {
-           setWordChoices([]);
-           setFullWord("");
-      }
-    };
-    newSocket.on("gameStateUpdate", onGameStateUpdate);
-
     return () => { 
-        newSocket.off("gameStateUpdate", onGameStateUpdate);
         newSocket.disconnect(); 
     };
   }, []);
@@ -731,6 +724,13 @@ export default function DoodleDuelClient() {
     );
   }, [addNotification]);
 
+  const handleCorrectGuessNotification = useCallback(({ playerName }: { playerName: string }) => {
+    notificationSoundRef.current?.play().catch(e => console.error("Error playing sound:", e));
+    addNotification(
+      <span><span className="font-bold">{playerName}</span> guessed the word!</span>,
+      <Check className="w-4 h-4 text-green-400" />
+    );
+  }, [addNotification]);
 
   useEffect(() => {
     if (!socket) return;
@@ -808,6 +808,7 @@ export default function DoodleDuelClient() {
     socket.on("aiSuggestion", onAiSuggestion);
     socket.on("closeGuess", handleCloseGuess);
     socket.on("playerGuessed", handlePlayerGuessed);
+    socket.on("correctGuessNotification", handleCorrectGuessNotification);
     socket.on("error", onError);
 
     return () => {
@@ -825,9 +826,10 @@ export default function DoodleDuelClient() {
         socket.off("aiSuggestion", onAiSuggestion);
         socket.off("closeGuess", handleCloseGuess);
         socket.off("playerGuessed", handlePlayerGuessed);
+        socket.off("correctGuessNotification", handleCorrectGuessNotification);
         socket.off("error", onError);
     };
-  }, [socket, toast, handleCloseGuess, handlePlayerGuessed]);
+  }, [socket, toast, handleCloseGuess, handlePlayerGuessed, handleCorrectGuessNotification]);
   
   useEffect(() => {
     if (canvasRef.current && (canvasRef.current as any).updateBrush) {
@@ -878,7 +880,19 @@ export default function DoodleDuelClient() {
   };
 
   const handleStartGame = () => socket?.emit("startGame", { totalRounds: selectedRounds });
-  const handleGuess = (guess: string) => socket?.emit("sendMessage", guess);
+  
+  const handleGuess = (guess: string) => {
+      if (guess.trim()) {
+        socket?.emit("sendMessage", guess.trim());
+      }
+  };
+
+  const handleMobileGuessSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    handleGuess(mobileGuess);
+    setMobileGuess("");
+  }
+
   const handlePlayAgain = () => socket?.emit("playAgain");
   const handleWordChoice = (word: string) => {
     socket?.emit("wordChosen", word);
@@ -907,6 +921,7 @@ export default function DoodleDuelClient() {
   }
 
   const activePlayers = gameState.players.filter(p => !p.disconnected);
+  const guessInputDisabled = isDrawer || (me?.hasGuessed ?? false) || me?.disconnected === true;
 
   return (
     <>
@@ -1001,65 +1016,87 @@ export default function DoodleDuelClient() {
               )}
           </div>
       ) : (
-        <div className="flex h-full flex-col p-2 md:p-4 gap-2 md:gap-4">
-          {/* Top Bar */}
-          <div className="flex items-center justify-between gap-4 flex-shrink-0 px-2">
-            <div className="flex items-center gap-2 text-lg font-bold text-primary w-1/4">
-                <Clock className="w-5 h-5" />
-                <span>{gameState.roundTimer}</span>
+        <>
+            {/* Main Game Content */}
+            <div className="flex-shrink-0">
+                <div className="flex items-center justify-between gap-4 px-2">
+                    <div className="flex items-center gap-2 text-lg font-bold text-primary w-1/4">
+                        <Clock className="w-5 h-5" />
+                        <span>{gameState.roundTimer}</span>
+                    </div>
+                    <WordDisplay maskedWord={gameState.currentWord} isDrawing={isDrawer} fullWord={fullWord} />
+                    <div className="flex items-center justify-end gap-2 w-1/4">
+                    <span className="text-sm font-bold hidden md:inline">ID: {roomId}</span>
+                    <Button onClick={copyInvite} size="sm" variant="outline">
+                        <ClipboardCopy className="w-4 h-4 md:mr-2" />
+                        <span className="hidden md:inline">Copy Link</span>
+                    </Button>
+                    </div>
+                </div>
             </div>
-            <WordDisplay maskedWord={gameState.currentWord} isDrawing={isDrawer} fullWord={fullWord} />
-            <div className="flex items-center justify-end gap-2 w-1/4">
-               <span className="text-sm font-bold hidden md:inline">Room: {roomId}</span>
-              <Button onClick={copyInvite} size="sm" variant="outline">
-                  <ClipboardCopy className="w-4 h-4 md:mr-2" />
-                  <span className="hidden md:inline">Copy Link</span>
-              </Button>
-            </div>
-          </div>
           
-          {/* Main Content Area */}
-          <div className="flex-1 flex flex-col md:flex-row gap-4 min-h-0">
-            {/* Left Column: Scoreboard (Desktop) */}
-            <div className="w-full md:w-[280px] flex-shrink-0 hidden md:flex">
-                 <Scoreboard players={gameState.players} currentPlayerId={socket?.id ?? null} />
-            </div>
-
-            {/* Center Column: Canvas */}
-            <div className="flex flex-col min-h-0 gap-2 order-first md:order-none h-[60%] md:h-auto md:flex-1">
-              <div className="relative w-full flex-1 flex items-center justify-center min-h-0">
-                  <div className="relative w-full h-full">
-                    <DrawingCanvas ref={canvasRef} onDrawStart={handleStartPath} onDrawing={handleDrawPath} isDrawingPlayer={isDrawer} drawingHistory={gameState.drawingHistory}/>
-                  </div>
-              </div>
-              {isDrawer && <Toolbar color={currentColor} setColor={setCurrentColor} lineWidth={currentLineWidth} setLineWidth={setCurrentLineWidth} onUndo={handleUndo} onClear={handleClear} disabled={!isDrawer} />}
-            </div>
-
-            {/* Right Column: Chat (Desktop) / Bottom Section (Mobile) */}
-            <div className="w-full md:w-[320px] lg:w-[350px] flex flex-col min-h-0 h-[40%] md:h-auto md:flex-initial">
-              
-              {/* Mobile View: Combined Scores and Chat */}
-              <div className="flex md:hidden flex-row h-full gap-2 min-h-0">
-                <div className="w-2/5 h-full">
-                  <Scoreboard players={gameState.players} currentPlayerId={socket?.id ?? null} />
+            <div className="flex-1 flex flex-col md:flex-row gap-4 min-h-0 p-2 md:p-4">
+                {/* Left Column: Scoreboard (Desktop) */}
+                <div className="w-full md:w-[280px] flex-shrink-0 hidden md:flex">
+                    <Scoreboard players={gameState.players} currentPlayerId={socket?.id ?? null} />
                 </div>
-                <div className="w-3/5 h-full">
-                  <ChatBox messages={gameState.messages} onSendMessage={handleGuess} disabled={isDrawer || (me?.hasGuessed ?? false) || me?.disconnected === true} />
-                </div>
-              </div>
-              
-              {/* Desktop View: Chat Only */}
-              <div className="hidden md:flex flex-col h-full">
-                <ChatBox messages={gameState.messages} onSendMessage={handleGuess} disabled={isDrawer || (me?.hasGuessed ?? false) || me?.disconnected === true} />
-              </div>
 
+                {/* Center Column: Canvas */}
+                <div className="flex flex-col min-h-0 gap-2 h-full md:h-auto md:flex-1">
+                    <div className="relative w-full flex-1 flex items-center justify-center min-h-0">
+                        <div className="relative w-full h-full">
+                            <DrawingCanvas ref={canvasRef} onDrawStart={handleStartPath} onDrawing={handleDrawPath} isDrawingPlayer={isDrawer} drawingHistory={gameState.drawingHistory}/>
+                        </div>
+                    </div>
+                    {isDrawer && <Toolbar color={currentColor} setColor={setCurrentColor} lineWidth={currentLineWidth} setLineWidth={setCurrentLineWidth} onUndo={handleUndo} onClear={handleClear} disabled={!isDrawer} />}
+                </div>
+
+                {/* Right Column: Chat (Desktop) / Bottom Section (Mobile) */}
+                <div className="w-full md:w-[320px] lg:w-[350px] flex flex-col min-h-0 h-full md:h-auto md:flex-initial">
+                    {/* Mobile View: Combined Scores and Chat */}
+                    <div className="flex md:hidden flex-row h-full gap-2 min-h-0">
+                        <div className="w-2/5 h-full">
+                        <Scoreboard players={gameState.players} currentPlayerId={socket?.id ?? null} />
+                        </div>
+                        <div className="w-3/5 h-full">
+                        <ChatBox messages={gameState.messages} showForm={false} />
+                        </div>
+                    </div>
+                    
+                    {/* Desktop View: Chat Only */}
+                    <div className="hidden md:flex flex-col h-full">
+                        <ChatBox messages={gameState.messages} onSendMessage={handleGuess} disabled={guessInputDisabled} showForm={true} />
+                    </div>
+                </div>
             </div>
-          </div>
-        </div>
+
+            {/* Mobile Guess Input */}
+            <div className="p-2 border-t bg-background block md:hidden flex-shrink-0">
+                <form onSubmit={handleMobileGuessSubmit}>
+                    <div className="relative">
+                        <Input
+                            placeholder={guessInputDisabled ? "Only guessers can chat" : "Type your guess..."}
+                            value={mobileGuess}
+                            onChange={(e) => setMobileGuess(e.target.value)}
+                            disabled={guessInputDisabled}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter' && !e.shiftKey) {
+                                    e.preventDefault();
+                                    handleMobileGuessSubmit(e);
+                                }
+                            }}
+                        />
+                        <Button type="submit" size="icon" className="absolute right-1 top-1/2 -translate-y-1/2 h-8 w-8" disabled={guessInputDisabled}>
+                            <ChevronRight className="w-4 h-4" />
+                        </Button>
+                    </div>
+                </form>
+            </div>
+        </>
       )}
       </main>
 
-      <div className="fixed bottom-20 md:bottom-4 right-4 z-50 flex flex-col items-end gap-2 w-full max-w-xs pointer-events-none">
+      <div className="fixed bottom-4 right-4 z-50 flex flex-col items-end gap-2 w-full max-w-xs pointer-events-none md:top-4 md:bottom-auto">
         {notifications.map((notif) => (
             <div key={notif.id} className="pointer-events-auto bg-slate-800 text-white rounded-lg px-4 py-2 text-sm shadow-lg animate-in fade-in-0 slide-in-from-bottom-10">
                 <div className="flex items-center gap-2">

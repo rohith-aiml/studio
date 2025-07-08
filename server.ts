@@ -459,6 +459,7 @@ app.prepare().then(() => {
             }
 
             room.gameState.messages.push({ playerName: "System", text: `${player.name} guessed the word! (+${guesserPoints} pts)`, isCorrect: true });
+            io.to(currentRoomId).emit("correctGuessNotification", { playerName: player.name });
 
             const allGuessed = room.gameState.players.filter(p => !p.isDrawing && !p.disconnected).every(p => p.hasGuessed);
             if (allGuessed) {
@@ -471,8 +472,6 @@ app.prepare().then(() => {
                 const distance = levenshteinDistance(normalizedGuess, normalizedWord);
                 if (distance === 1) {
                     socket.emit('closeGuess', "So close! One letter is off.");
-                } else if (distance <= 3) {
-                    socket.emit('closeGuess', "You're getting warmer!");
                 }
             }
         }
