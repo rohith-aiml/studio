@@ -448,7 +448,12 @@ app.prepare().then(() => {
         const normalizedWord = room.gameState.currentWord.trim().toLowerCase();
         const isCorrect = normalizedGuess === normalizedWord;
         
-        room.gameState.messages.push({ playerName: player.name, text, isCorrect });
+        // Always add guess to history
+        room.gameState.messages.push({ 
+            playerName: player.name, 
+            text: isCorrect ? 'Guessed the word!' : text, 
+            isCorrect 
+        });
 
         if (isCorrect) {
             player.hasGuessed = true;
@@ -460,7 +465,7 @@ app.prepare().then(() => {
                 drawer.score += 20;
             }
 
-            io.to(currentRoomId).emit("playerGuessed", { playerName: player.name, points: guesserPoints });
+            io.to(currentRoomId).emit("correctGuessNotification", { playerName: player.name, points: guesserPoints });
 
             const allGuessed = room.gameState.players.filter(p => !p.isDrawing && !p.disconnected).every(p => p.hasGuessed);
             if (allGuessed) {
@@ -468,13 +473,15 @@ app.prepare().then(() => {
             }
              broadcastGameState(currentRoomId);
         } else {
+            // Emit notification for incorrect guess
+             io.to(currentRoomId).emit("playerGuessed", { playerName: player.name, guess: text });
+             
             if (room.gameState.currentWord) {
                 const distance = levenshteinDistance(normalizedGuess, normalizedWord);
                 if (distance === 1) {
                     socket.emit('closeGuess', "So close! One letter is off.");
                 }
             }
-             io.to(currentRoomId).emit("playerGuessed", { playerName: player.name, guess: text });
             broadcastGameState(currentRoomId);
         }
     });
@@ -492,8 +499,15 @@ app.prepare().then(() => {
         if (!currentRoomId) return;
         const room = gameRooms.get(currentRoomId);
         if (room && socket.id === room.gameState.drawerId && room.gameState.drawingHistory.length > 0) {
-            room.gameState.drawingHistory[room.gameState.drawingHistory.length - 1] = path;
-            socket.to(currentRoomId).emit("pathUpdated", path);
+            const normalizedPath = {
+                ...path,
+                path: path.path.map(p => ({
+                    x: Math.max(0, Math.min(1, p.x)),
+                    y: Math.max(0, Math.min(1, p.y)),
+                }))
+            };
+            room.gameState.drawingHistory[room.gameState.drawingHistory.length - 1] = normalizedPath;
+            socket.to(currentRoomId).emit("pathUpdated", normalizedPath);
         }
     });
     

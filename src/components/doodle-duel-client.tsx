@@ -98,7 +98,7 @@ const ROUND_TIME = 90; // in seconds
 const AI_CHECK_INTERVAL = 15000; // 15 seconds
 const ROUND_OPTIONS = [1, 2, 3, 5, 10];
 const WORD_CHOICE_TIME = 15;
-const NOTIFICATION_DURATION = 3000; // 3 seconds
+const NOTIFICATION_DURATION = 1000; // 1 second
 
 const DRAWING_COLORS = [
   "#000000", "#ef4444", "#fb923c", "#facc15", "#4ade80", "#22d3ee", "#3b82f6", "#a78bfa", "#f472b6", "#ffffff",
@@ -494,13 +494,9 @@ const ChatBox = ({ messages, onSendMessage, disabled, showForm = true }: { messa
                         "p-1.5 rounded-md text-xs", 
                         msg.isCorrect ? "bg-green-100 dark:bg-green-900" : "bg-muted/50"
                     )}>
-                        {msg.isCorrect ? (
-                             <span className="text-green-600 dark:text-green-400 font-medium">
-                                <span className="font-bold text-primary">{msg.playerName}: </span> {msg.text}
-                            </span>
-                        ) : (
-                           <span><span className="font-bold text-primary">{msg.playerName}: </span> {msg.text}</span>
-                        )}
+                        <span className={cn(msg.isCorrect && "text-green-600 dark:text-green-400 font-medium")}>
+                            <span className="font-bold text-primary">{msg.playerName}: </span> {msg.text}
+                        </span>
                     </div>
                 ))}
                 <div ref={messagesEndRef} />
@@ -748,21 +744,20 @@ export default function DoodleDuelClient() {
   }, [addNotification]);
   
   const handlePlayerGuessed = useCallback(({ playerName, guess, points }: { playerName: string, guess?: string, points?: number }) => {
-    if (points) {
-      // Correct guess
+    // Incorrect guess
+    addNotification(
+      <span><span className="font-bold">{playerName}:</span> {guess}</span>,
+      <MessageSquare className="w-4 h-4" />
+    );
+  }, [addNotification]);
+  
+  const handleCorrectGuessNotification = useCallback(({ playerName, points }: { playerName: string, points: number }) => {
       // notificationSoundRef.current?.play().catch(e => console.error("Error playing sound:", e));
       addNotification(
         <span><span className="font-bold">{playerName}</span> guessed the word! (+{points} pts)</span>,
         <Check className="w-4 h-4" />,
         'success'
       );
-    } else if (guess) {
-      // Incorrect guess
-      addNotification(
-        <span><span className="font-bold">{playerName}:</span> {guess}</span>,
-        <MessageSquare className="w-4 h-4" />
-      );
-    }
   }, [addNotification]);
 
 
@@ -846,6 +841,7 @@ export default function DoodleDuelClient() {
     socket.on("aiSuggestion", onAiSuggestion);
     socket.on("closeGuess", handleCloseGuess);
     socket.on("playerGuessed", handlePlayerGuessed);
+    socket.on("correctGuessNotification", handleCorrectGuessNotification);
     socket.on("error", onError);
 
     return () => {
@@ -863,9 +859,10 @@ export default function DoodleDuelClient() {
         socket.off("aiSuggestion", onAiSuggestion);
         socket.off("closeGuess", handleCloseGuess);
         socket.off("playerGuessed", handlePlayerGuessed);
+        socket.off("correctGuessNotification", handleCorrectGuessNotification);
         socket.off("error", onError);
     };
-  }, [socket, name, roomId, me, toast, handleCloseGuess, handlePlayerGuessed]);
+  }, [socket, name, roomId, me, toast, handleCloseGuess, handlePlayerGuessed, handleCorrectGuessNotification]);
   
   useEffect(() => {
     if (canvasRef.current && (canvasRef.current as any).updateBrush) {
@@ -923,8 +920,8 @@ export default function DoodleDuelClient() {
       }
   };
 
-  const handleMobileGuess = (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
+  const handleMobileGuess = (e: React.FormEvent) => {
+    e.preventDefault();
     handleGuess(mobileGuess);
     setMobileGuess("");
   };
@@ -1052,58 +1049,67 @@ export default function DoodleDuelClient() {
               )}
           </div>
       ) : isMobile ? (
-         <div className="flex h-full flex-col">
-            {/* Top Bar */}
-            <div className="flex-shrink-0 flex items-center justify-between gap-2 p-2 border-b">
-                <div className={cn("flex items-center gap-2 font-bold w-1/4", gameState.roundTimer <= 15 ? 'text-red-500' : 'text-primary')}>
-                    <Clock className="w-5 h-5" />
-                    <span>{gameState.roundTimer}</span>
-                </div>
-                <div className="flex-grow">
-                    <WordDisplay maskedWord={gameState.currentWord} isDrawing={isDrawer} fullWord={fullWord} />
-                </div>
-                <div className="flex items-center justify-end gap-1 w-1/4">
-                    <p className="text-sm font-medium text-muted-foreground hidden sm:inline">ID: {roomId}</p>
-                    <Button onClick={copyInvite} size="icon" variant="ghost" className="w-8 h-8">
-                        <ClipboardCopy className="w-4 h-4" />
-                        <span className="sr-only">Copy Link</span>
-                    </Button>
-                </div>
-            </div>
+        <div className="flex h-dvh flex-col bg-background">
+          {/* Top Bar */}
+          <div className="flex-shrink-0 flex items-center justify-between gap-2 p-2 border-b">
+              <div className={cn("flex items-center gap-2 font-bold w-1/4", gameState.roundTimer <= 15 ? 'text-red-500' : 'text-primary')}>
+                  <Clock className="w-5 h-5" />
+                  <span>{gameState.roundTimer}</span>
+              </div>
+              <div className="flex-grow">
+                  <WordDisplay maskedWord={gameState.currentWord} isDrawing={isDrawer} fullWord={fullWord} />
+              </div>
+              <div className="flex items-center justify-end gap-1 w-1/4">
+                  <p className="text-sm font-medium text-muted-foreground hidden sm:inline">ID: {roomId}</p>
+                  <Button onClick={copyInvite} size="icon" variant="ghost" className="w-8 h-8">
+                      <ClipboardCopy className="w-4 h-4" />
+                      <span className="sr-only">Copy Link</span>
+                  </Button>
+              </div>
+          </div>
 
-            {/* Main content area */}
-            <div className={cn("flex-grow flex flex-col min-h-0 transition-all duration-300", isInputFocused && !isDrawer ? "pb-[50px]" : "pb-2")}>
-                 <div className="relative flex-grow bg-slate-100 dark:bg-slate-800 p-2 min-h-0" style={{flexBasis: '60%'}}>
+          {/* Main Content Area: Changes based on focus */}
+          <div className="flex-grow flex flex-col min-h-0 p-2 gap-2">
+            {isInputFocused && !isDrawer ? (
+              // FOCUSED (TYPING) VIEW: Only canvas is visible in the main area
+              <div className="flex-grow min-h-0 relative bg-slate-100 dark:bg-slate-800 rounded-lg">
+                  <DrawingCanvas ref={canvasRef} onDrawStart={handleStartPath} onDrawing={handleDrawPath} isDrawingPlayer={isDrawer} drawingHistory={gameState.drawingHistory}/>
+              </div>
+            ) : (
+              // DEFAULT VIEW: Canvas and Chat/Players are visible
+              <>
+                <div className="relative bg-slate-100 dark:bg-slate-800 rounded-lg" style={{flexBasis: '60%', minHeight: 0}}>
                     <DrawingCanvas ref={canvasRef} onDrawStart={handleStartPath} onDrawing={handleDrawPath} isDrawingPlayer={isDrawer} drawingHistory={gameState.drawingHistory}/>
                 </div>
-                
-                <div className={cn("flex-shrink-0 flex gap-2 px-2 pt-2 min-h-0 h-full transition-opacity duration-300", isInputFocused && !isDrawer ? 'opacity-0 h-0 invisible' : 'opacity-100' )} style={{flexBasis: '40%'}}>
+                <div className="flex-shrink-0 flex gap-2 h-full" style={{flexBasis: '40%', minHeight: 0}}>
                     <div className="w-2/5 h-full"><Scoreboard players={gameState.players} currentPlayerId={socket?.id ?? null} /></div>
                     <div className="w-3/5 h-full"><ChatBox messages={gameState.messages} showForm={false} /></div>
                 </div>
-            </div>
-
-            {/* Input or Toolbar */}
-            <div className="flex-shrink-0 p-2 border-t bg-background">
-                {isDrawer ? (
-                     <Toolbar color={currentColor} setColor={setCurrentColor} lineWidth={currentLineWidth} setLineWidth={setCurrentLineWidth} onUndo={handleUndo} onClear={handleClear} disabled={!isDrawer} />
-                ) : (
-                    <form onSubmit={handleMobileGuess} className="relative">
-                        <Input
-                            placeholder={guessInputDisabled ? "You've guessed it!" : "Type your guess..."}
-                            value={mobileGuess}
-                            onChange={(e) => setMobileGuess(e.target.value)}
-                            disabled={guessInputDisabled}
-                            onFocus={() => setIsInputFocused(true)}
-                            onBlur={() => setIsInputFocused(false)}
-                            className="pr-12"
-                        />
-                        <Button type="submit" size="icon" className="absolute right-1 top-1/2 -translate-y-1/2 h-8 w-8" disabled={guessInputDisabled}>
-                            <ChevronRight className="w-4 h-4" />
-                        </Button>
-                    </form>
-                )}
-            </div>
+              </>
+            )}
+          </div>
+          
+          {/* Input or Toolbar */}
+          <div className="flex-shrink-0 p-2 border-t bg-background">
+              {isDrawer ? (
+                   <Toolbar color={currentColor} setColor={setCurrentColor} lineWidth={currentLineWidth} setLineWidth={setCurrentLineWidth} onUndo={handleUndo} onClear={handleClear} disabled={!isDrawer} />
+              ) : (
+                  <form onSubmit={handleMobileGuess} className="relative">
+                      <Input
+                          placeholder={guessInputDisabled ? "You've guessed it!" : "Type your guess..."}
+                          value={mobileGuess}
+                          onChange={(e) => setMobileGuess(e.target.value)}
+                          disabled={guessInputDisabled}
+                          onFocus={() => setIsInputFocused(true)}
+                          onBlur={() => setIsInputFocused(false)}
+                          className="pr-12"
+                      />
+                      <Button type="submit" size="icon" className="absolute right-1 top-1/2 -translate-y-1/2 h-8 w-8" disabled={guessInputDisabled}>
+                          <ChevronRight className="w-4 h-4" />
+                      </Button>
+                  </form>
+              )}
+          </div>
         </div>
       ) : (
         <>
