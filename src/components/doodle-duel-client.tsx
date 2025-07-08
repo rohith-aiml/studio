@@ -78,6 +78,7 @@ type GameState = {
   isRoundActive: boolean;
   isGameOver: boolean;
   currentWord: string; // This will be the masked word
+  wordLength: number;
   roundTimer: number;
   drawerId: string | null;
   ownerId: string | null;
@@ -244,7 +245,7 @@ const Scoreboard = ({ players, currentPlayerId }: { players: Player[]; currentPl
   </Card>
 );
 
-const WordDisplay = ({ maskedWord, isDrawing, fullWord }: { maskedWord: string; isDrawing: boolean; fullWord: string; }) => {
+const WordDisplay = ({ maskedWord, isDrawing, fullWord, wordLength }: { maskedWord: string; isDrawing: boolean; fullWord: string; wordLength: number; }) => {
     const [isWordVisible, setIsWordVisible] = useState(true);
 
     useEffect(() => {
@@ -262,6 +263,9 @@ const WordDisplay = ({ maskedWord, isDrawing, fullWord }: { maskedWord: string; 
             <p className="text-2xl md:text-3xl font-bold tracking-widest font-headline text-primary transition-all duration-300">
               {isDrawing ? (isWordVisible ? fullWord : '*'.repeat(fullWord.length).split('').join(' ')) : maskedWord}
             </p>
+            {wordLength > 0 && (
+                <span className="text-lg md:text-xl font-semibold text-muted-foreground">({wordLength})</span>
+            )}
             {isDrawing && fullWord && (
                 <Button onClick={() => setIsWordVisible(!isWordVisible)} size="icon" variant="ghost" className="h-8 w-8">
                     {isWordVisible ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -667,6 +671,7 @@ export default function DoodleDuelClient() {
       isRoundActive: false,
       isGameOver: false,
       currentWord: "",
+      wordLength: 0,
       roundTimer: ROUND_TIME,
       drawerId: null,
       ownerId: null,
@@ -1066,7 +1071,7 @@ export default function DoodleDuelClient() {
                   <span>{gameState.roundTimer}</span>
               </div>
               <div className="flex-grow">
-                  <WordDisplay maskedWord={gameState.currentWord} isDrawing={isDrawer} fullWord={fullWord} />
+                  <WordDisplay maskedWord={gameState.currentWord} isDrawing={isDrawer} fullWord={fullWord} wordLength={gameState.wordLength} />
               </div>
               <div className="flex items-center justify-end gap-1 w-1/4">
                   <p className="text-sm font-medium text-muted-foreground hidden sm:inline">ID: {roomId}</p>
@@ -1125,7 +1130,7 @@ export default function DoodleDuelClient() {
                         <Clock className="w-5 h-5" />
                         <span>{gameState.roundTimer}</span>
                     </div>
-                    <WordDisplay maskedWord={gameState.currentWord} isDrawing={isDrawer} fullWord={fullWord} />
+                    <WordDisplay maskedWord={gameState.currentWord} isDrawing={isDrawer} fullWord={fullWord} wordLength={gameState.wordLength} />
                     <div className="flex items-center justify-end gap-2 w-1/4">
                         <span className="text-sm font-bold">ID: {roomId}</span>
                         <Button onClick={copyInvite} size="sm" variant="outline">

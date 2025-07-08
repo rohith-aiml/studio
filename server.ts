@@ -48,6 +48,7 @@ type GameState = {
     isRoundActive: boolean;
     isGameOver: boolean;
     currentWord: string;
+    wordLength: number;
     revealedIndices: number[];
     roundTimer: number;
     drawerId: string | null;
@@ -193,6 +194,7 @@ app.prepare().then(() => {
     room.gameState.drawingHistory = [];
     room.gameState.messages.push({ playerName: "System", text: `${newDrawer.name} is choosing a word...`, isCorrect: false });
     room.gameState.currentWord = "";
+    room.gameState.wordLength = 0;
     room.gameState.revealedIndices = [];
     room.gameState.roundTimer = 90;
     room.gameState.isRoundActive = false;
@@ -299,6 +301,7 @@ app.prepare().then(() => {
             isRoundActive: false,
             isGameOver: false,
             currentWord: "",
+            wordLength: 0,
             revealedIndices: [],
             roundTimer: 90,
             drawerId: player.id,
@@ -425,6 +428,7 @@ app.prepare().then(() => {
         if (!drawer) return;
 
         room.gameState.currentWord = word;
+        room.gameState.wordLength = word.length;
         room.gameState.isRoundActive = true;
         
         // Don't remove the "is choosing..." message to preserve chat history
