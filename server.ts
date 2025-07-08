@@ -464,8 +464,9 @@ app.prepare().then(() => {
             if (allGuessed) {
                 endRound(currentRoomId, true);
             }
+             broadcastGameState(currentRoomId);
         } else {
-            room.gameState.messages.push({ playerName: player.name, text, isCorrect: false });
+            io.to(currentRoomId).emit("playerGuessed", { playerName: player.name, text });
             if (room.gameState.currentWord) {
                 const distance = levenshteinDistance(normalizedGuess, normalizedWord);
                 if (distance === 1) {
@@ -475,7 +476,6 @@ app.prepare().then(() => {
                 }
             }
         }
-        broadcastGameState(currentRoomId);
     });
 
     socket.on("startPath", (path: DrawingPath) => {

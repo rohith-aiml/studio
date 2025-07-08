@@ -26,6 +26,7 @@ import {
   Eraser,
   Eye,
   EyeOff,
+  MessageSquare,
   PartyPopper,
   Pencil,
   Sparkles,
@@ -82,6 +83,13 @@ type GameState = {
   gameSettings: GameSettings;
   currentRound: number;
 };
+
+type Notification = {
+  id: number;
+  content: React.ReactNode;
+  icon?: React.ReactNode;
+};
+
 
 // --- CONSTANTS ---
 const ROUND_TIME = 90; // in seconds
@@ -328,7 +336,6 @@ const DrawingCanvas = React.forwardRef<HTMLCanvasElement, {
         
         const startDrawing = useCallback((e: React.MouseEvent | React.TouchEvent) => {
             if (!isDrawingPlayer) return;
-            e.preventDefault();
             const canvas = ref && 'current' in ref && ref.current;
             const ctx = canvas?.getContext('2d');
             if (!ctx || !canvas) return;
@@ -356,7 +363,6 @@ const DrawingCanvas = React.forwardRef<HTMLCanvasElement, {
 
         const draw = useCallback((e: React.MouseEvent | React.TouchEvent) => {
             if (!isDrawing.current || !isDrawingPlayer) return;
-            e.preventDefault();
             const canvas = ref && 'current' in ref && ref.current;
             const ctx = canvas?.getContext('2d');
             if (!ctx) return;
@@ -394,9 +400,9 @@ const DrawingCanvas = React.forwardRef<HTMLCanvasElement, {
                 onMouseMove={draw}
                 onMouseUp={stopDrawing}
                 onMouseLeave={stopDrawing}
-                onTouchStart={startDrawing}
-                onTouchMove={draw}
-                onTouchEnd={stopDrawing}
+                onTouchStart={(e) => { e.preventDefault(); startDrawing(e); }}
+                onTouchMove={(e) => { e.preventDefault(); draw(e); }}
+                onTouchEnd={(e) => { e.preventDefault(); stopDrawing(); }}
                 className={cn("bg-white rounded-lg shadow-inner w-full h-full", isDrawingPlayer ? "cursor-crosshair touch-none" : "cursor-not-allowed")}
             />
         );
@@ -662,13 +668,12 @@ export default function DoodleDuelClient() {
   const [currentLineWidth, setCurrentLineWidth] = useState(BRUSH_SIZES[1]);
 
   const [selectedRounds, setSelectedRounds] = useState(ROUND_OPTIONS[2]);
-  const [closeGuessHint, setCloseGuessHint] = useState<string | null>(null);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
   
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const aiCheckIntervalRef = useRef<NodeJS.Timeout>();
   const notificationSoundRef = useRef<HTMLAudioElement>(null);
-  const closeGuessTimeoutRef = useRef<NodeJS.Timeout>();
-
+  const notificationIdCounter = useRef(0);
 
   const { toast } = useToast();
 
@@ -687,22 +692,45 @@ export default function DoodleDuelClient() {
   useEffect(() => {
     const newSocket = io();
     setSocket(newSocket);
-    return () => { newSocket.disconnect(); };
+
+    const onGameStateUpdate = (newGameState: GameState) => {
+      setGameState(newGameState);
+      if (newGameState.isRoundActive !== gameStateRef.current.isRoundActive && newGameState.isRoundActive) {
+          // New round has started
+      }
+      if (!newGameState.isRoundActive) {
+           setWordChoices([]);
+           setFullWord("");
+      }
+    };
+    newSocket.on("gameStateUpdate", onGameStateUpdate);
+
+    return () => { 
+        newSocket.off("gameStateUpdate", onGameStateUpdate);
+        newSocket.disconnect(); 
+    };
   }, []);
   
+  const addNotification = useCallback((content: React.ReactNode, icon?: React.ReactNode) => {
+    const id = notificationIdCounter.current++;
+    setNotifications(prev => [...prev, { id, content, icon }]);
+    setTimeout(() => {
+        setNotifications(prev => prev.filter(n => n.id !== id));
+    }, 4000);
+  }, []);
+
   const handleCloseGuess = useCallback((message: string) => {
     notificationSoundRef.current?.play().catch(e => console.error("Error playing sound:", e));
-    
-    if (closeGuessTimeoutRef.current) {
-        clearTimeout(closeGuessTimeoutRef.current);
-    }
-    
-    setCloseGuessHint(message);
-    
-    closeGuessTimeoutRef.current = setTimeout(() => {
-        setCloseGuessHint(null);
-    }, 3000);
-  }, []);
+    addNotification(message, <Sparkles className="w-4 h-4 text-yellow-300" />);
+  }, [addNotification]);
+  
+  const handlePlayerGuessed = useCallback(({ playerName, text }: { playerName: string, text: string }) => {
+    addNotification(
+      <span><span className="font-bold">{playerName}:</span> {text}</span>,
+      <MessageSquare className="w-4 h-4" />
+    );
+  }, [addNotification]);
+
 
   useEffect(() => {
     if (!socket) return;
@@ -779,6 +807,7 @@ export default function DoodleDuelClient() {
     socket.on("roundEnd", onRoundEnd);
     socket.on("aiSuggestion", onAiSuggestion);
     socket.on("closeGuess", handleCloseGuess);
+    socket.on("playerGuessed", handlePlayerGuessed);
     socket.on("error", onError);
 
     return () => {
@@ -795,12 +824,10 @@ export default function DoodleDuelClient() {
         socket.off("roundEnd", onRoundEnd);
         socket.off("aiSuggestion", onAiSuggestion);
         socket.off("closeGuess", handleCloseGuess);
+        socket.off("playerGuessed", handlePlayerGuessed);
         socket.off("error", onError);
-        if (closeGuessTimeoutRef.current) {
-            clearTimeout(closeGuessTimeoutRef.current);
-        }
     };
-  }, [socket, toast, handleCloseGuess]);
+  }, [socket, toast, handleCloseGuess, handlePlayerGuessed]);
   
   useEffect(() => {
     if (canvasRef.current && (canvasRef.current as any).updateBrush) {
@@ -983,6 +1010,7 @@ export default function DoodleDuelClient() {
             </div>
             <WordDisplay maskedWord={gameState.currentWord} isDrawing={isDrawer} fullWord={fullWord} />
             <div className="flex items-center justify-end gap-2 w-1/4">
+               <span className="text-sm font-bold hidden md:inline">Room: {roomId}</span>
               <Button onClick={copyInvite} size="sm" variant="outline">
                   <ClipboardCopy className="w-4 h-4 md:mr-2" />
                   <span className="hidden md:inline">Copy Link</span>
@@ -1031,14 +1059,16 @@ export default function DoodleDuelClient() {
       )}
       </main>
 
-      {closeGuessHint && (
-        <div className="fixed bottom-20 md:bottom-4 right-4 z-50 bg-slate-800 text-white rounded-lg px-4 py-2 text-sm shadow-lg animate-in fade-in-0 slide-in-from-bottom-10">
-            <div className="flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-yellow-300" />
-                <span>{closeGuessHint}</span>
+      <div className="fixed bottom-20 md:bottom-4 right-4 z-50 flex flex-col items-end gap-2 w-full max-w-xs pointer-events-none">
+        {notifications.map((notif) => (
+            <div key={notif.id} className="pointer-events-auto bg-slate-800 text-white rounded-lg px-4 py-2 text-sm shadow-lg animate-in fade-in-0 slide-in-from-bottom-10">
+                <div className="flex items-center gap-2">
+                    {notif.icon}
+                    <div>{notif.content}</div>
+                </div>
             </div>
-        </div>
-      )}
+        ))}
+      </div>
 
       <audio ref={notificationSoundRef} src="/notification.mp3" preload="auto" className="hidden" />
       <Toaster />
