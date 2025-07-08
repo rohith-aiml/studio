@@ -851,7 +851,7 @@ export default function DoodleDuelClient() {
         socket.off("aiSuggestion", onAiSuggestion);
         socket.off("closeGuess", handleCloseGuess);
         socket.off("playerGuessed", handlePlayerGuessed);
-        socket.off("correctGuessNotification", onCorrectGuessNotification);
+        socket.off("correctGuessNotification", handleCorrectGuessNotification);
         socket.off("error", onError);
     };
   }, [socket, name, roomId, me, toast, handleCloseGuess, handlePlayerGuessed, handleCorrectGuessNotification]);
