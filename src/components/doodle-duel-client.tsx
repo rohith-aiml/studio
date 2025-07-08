@@ -683,7 +683,6 @@ export default function DoodleDuelClient() {
   const [selectedRounds, setSelectedRounds] = useState(ROUND_OPTIONS[2]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [mobileGuess, setMobileGuess] = useState("");
-  const [isInputFocused, setIsInputFocused] = useState(false);
   
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const mobileInputRef = useRef<HTMLInputElement>(null);
@@ -1073,21 +1072,15 @@ export default function DoodleDuelClient() {
               </div>
           </div>
 
-          {/* Main Content Area */}
-          <div className="flex-grow flex flex-col min-h-0 p-2 gap-2">
-            <div className={cn(
-              "relative bg-slate-100 dark:bg-slate-800 rounded-lg",
-              isInputFocused && !isDrawer ? "flex-grow min-h-0" : "h-[40%] flex-shrink-0"
-            )}>
-                <DrawingCanvas ref={canvasRef} onDrawStart={handleStartPath} onDrawing={handleDrawPath} isDrawingPlayer={isDrawer} drawingHistory={gameState.drawingHistory}/>
-            </div>
-            <div className={cn(
-              "flex gap-2 min-h-0",
-              isInputFocused && !isDrawer ? "hidden" : "flex-grow"
-            )}>
-                <div className="w-2/5 h-full"><Scoreboard players={gameState.players} currentPlayerId={socket?.id ?? null} /></div>
-                <div className="w-3/5 h-full"><ChatBox messages={gameState.messages} showForm={false} /></div>
-            </div>
+          {/* Canvas Area */}
+           <div className="relative h-[40%] flex-shrink-0 bg-slate-100 dark:bg-slate-800 rounded-lg m-2">
+              <DrawingCanvas ref={canvasRef} onDrawStart={handleStartPath} onDrawing={handleDrawPath} isDrawingPlayer={isDrawer} drawingHistory={gameState.drawingHistory}/>
+          </div>
+          
+          {/* Players and Chat Area */}
+          <div className="flex-grow flex gap-2 p-2 pt-0 min-h-0">
+              <div className="w-2/5 h-full"><Scoreboard players={gameState.players} currentPlayerId={socket?.id ?? null} /></div>
+              <div className="w-3/5 h-full"><ChatBox messages={gameState.messages} showForm={false} /></div>
           </div>
           
           {/* Input or Toolbar */}
@@ -1102,7 +1095,6 @@ export default function DoodleDuelClient() {
                           value={mobileGuess}
                           onChange={(e) => setMobileGuess(e.target.value)}
                           disabled={guessInputDisabled}
-                          onFocus={() => setIsInputFocused(true)}
                           className="pr-12"
                           autoCapitalize="off"
                           autoComplete="off"
