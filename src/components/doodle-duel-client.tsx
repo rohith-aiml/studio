@@ -926,7 +926,8 @@ export default function DoodleDuelClient() {
     if (guess && !guessInputDisabled) {
       handleGuess(guess);
       setMobileGuess("");
-      mobileInputRef.current?.focus();
+      // Keep focus to prevent keyboard from closing
+      mobileInputRef.current?.focus(); 
     }
   };
 
@@ -960,6 +961,82 @@ export default function DoodleDuelClient() {
 
   const activePlayers = gameState.players.filter(p => !p.disconnected);
   
+  const lobbyScreen = (
+    <div className="flex h-full w-full items-center justify-center p-4">
+        {gameState.currentRound === 0 ? (
+            <Card className="p-4 md:p-8 text-center m-auto w-full max-w-md">
+                <CardHeader className="p-2">
+                    <CardTitle className="text-2xl mb-2">Lobby</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                     <div className="space-y-2">
+                        <p className="text-sm text-muted-foreground">Invite friends with this link or room ID</p>
+                        <div className="flex items-center justify-between gap-4 p-2 rounded-lg bg-muted/50">
+                            <div className="flex items-baseline gap-2">
+                              <span className="text-sm font-medium text-muted-foreground">ID:</span>
+                              <span className="text-xl font-bold tracking-widest text-primary">{roomId}</span>
+                            </div>
+                            <Button onClick={copyInvite} size="sm" variant="outline">
+                                <ClipboardCopy className="w-4 h-4 mr-2" />
+                                Copy Link
+                            </Button>
+                        </div>
+                    </div>
+                    
+                    <Separator className="my-4" />
+            
+                    <div className="w-full text-left">
+                        <h3 className="text-lg font-medium mb-2 text-center">{activePlayers.length} / 8 players</h3>
+                        <ul className="space-y-2 max-h-48 overflow-y-auto pr-2">
+                            {activePlayers.map(p => (
+                                <li key={p.id} className="flex items-center gap-3 p-2 rounded-lg bg-background">
+                                    <Avatar className="w-10 h-10">
+                                        <AvatarImage src={p.avatarUrl} />
+                                        <AvatarFallback className="text-2xl">
+                                            {p.avatarUrl.startsWith('http') ? p.name.charAt(0) : p.avatarUrl}
+                                        </AvatarFallback>
+                                    </Avatar>
+                                    <span className="font-medium">{p.name}</span>
+                                    {p.id === gameState.ownerId && <Trophy className="w-4 h-4 text-amber-500 ml-auto" title="Host"/>}
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+                    
+                    {isOwner && activePlayers.length >= 2 && (
+                        <>
+                            <Separator className="my-4" />
+                            <div className="flex flex-col gap-4 items-center pt-2">
+                                <div className="flex items-center gap-2">
+                                    <Label htmlFor="rounds">Rounds:</Label>
+                                    <Select onValueChange={(value) => setSelectedRounds(parseInt(value, 10))} defaultValue={String(selectedRounds)}>
+                                        <SelectTrigger id="rounds" className="w-24"><SelectValue placeholder="Rounds" /></SelectTrigger>
+                                        <SelectContent>{ROUND_OPTIONS.map(r => <SelectItem key={r} value={String(r)}>{r}</SelectItem>)}</SelectContent>
+                                    </Select>
+                                </div>
+                                <Button onClick={handleStartGame} size="lg" className="w-full">Start Game</Button>
+                            </div>
+                        </>
+                    )}
+                    {isOwner && activePlayers.length < 2 && (
+                        <p className="mt-4 text-sm text-muted-foreground animate-pulse">Waiting for at least one more player to join...</p>
+                    )}
+                    {!isOwner && (
+                         <p className="mt-4 text-sm text-muted-foreground animate-pulse">Waiting for {gameState.players.find(p => p.id === gameState.ownerId)?.name || 'the host'} to start the game.</p>
+                    )}
+                </CardContent>
+            </Card>
+        ) : (
+            <Card className="p-8 text-center m-auto animate-pulse">
+                <CardTitle className="text-2xl mb-2">Next round is starting!</CardTitle>
+                <CardContent className="space-y-4">
+                    <p className="text-lg text-muted-foreground">{isDrawer ? "You are choosing a word..." : `${gameState.players.find(p => p.id === gameState.drawerId)?.name || 'Someone'} is choosing a word...`}</p>
+                </CardContent>
+            </Card>
+        )}
+    </div>
+  );
+
   return (
     <>
       <Dialog open={isDrawer && wordChoices.length > 0}>
@@ -977,84 +1054,11 @@ export default function DoodleDuelClient() {
         </DialogContent>
       </Dialog>
       
-      <main className="flex h-dvh max-h-dvh flex-col overflow-hidden bg-background">
       {!roomId || (!gameState.isRoundActive && !gameState.isGameOver) ? (
-          <div className="flex h-full w-full items-center justify-center p-4">
-              {gameState.currentRound === 0 ? (
-                  <Card className="p-4 md:p-8 text-center m-auto w-full max-w-md">
-                      <CardHeader className="p-2">
-                          <CardTitle className="text-2xl mb-2">Lobby</CardTitle>
-                      </CardHeader>
-                      <CardContent className="space-y-4">
-                           <div className="space-y-2">
-                              <p className="text-sm text-muted-foreground">Invite friends with this link or room ID</p>
-                              <div className="flex items-center justify-between gap-4 p-2 rounded-lg bg-muted/50">
-                                  <div className="flex items-baseline gap-2">
-                                    <span className="text-sm font-medium text-muted-foreground">ID:</span>
-                                    <span className="text-xl font-bold tracking-widest text-primary">{roomId}</span>
-                                  </div>
-                                  <Button onClick={copyInvite} size="sm" variant="outline">
-                                      <ClipboardCopy className="w-4 h-4 mr-2" />
-                                      Copy Link
-                                  </Button>
-                              </div>
-                          </div>
-                          
-                          <Separator className="my-4" />
-                  
-                          <div className="w-full text-left">
-                              <h3 className="text-lg font-medium mb-2 text-center">{activePlayers.length} / 8 players</h3>
-                              <ul className="space-y-2 max-h-48 overflow-y-auto pr-2">
-                                  {activePlayers.map(p => (
-                                      <li key={p.id} className="flex items-center gap-3 p-2 rounded-lg bg-background">
-                                          <Avatar className="w-10 h-10">
-                                              <AvatarImage src={p.avatarUrl} />
-                                              <AvatarFallback className="text-2xl">
-                                                  {p.avatarUrl.startsWith('http') ? p.name.charAt(0) : p.avatarUrl}
-                                              </AvatarFallback>
-                                          </Avatar>
-                                          <span className="font-medium">{p.name}</span>
-                                          {p.id === gameState.ownerId && <Trophy className="w-4 h-4 text-amber-500 ml-auto" title="Host"/>}
-                                      </li>
-                                  ))}
-                              </ul>
-                          </div>
-                          
-                          {isOwner && activePlayers.length >= 2 && (
-                              <>
-                                  <Separator className="my-4" />
-                                  <div className="flex flex-col gap-4 items-center pt-2">
-                                      <div className="flex items-center gap-2">
-                                          <Label htmlFor="rounds">Rounds:</Label>
-                                          <Select onValueChange={(value) => setSelectedRounds(parseInt(value, 10))} defaultValue={String(selectedRounds)}>
-                                              <SelectTrigger id="rounds" className="w-24"><SelectValue placeholder="Rounds" /></SelectTrigger>
-                                              <SelectContent>{ROUND_OPTIONS.map(r => <SelectItem key={r} value={String(r)}>{r}</SelectItem>)}</SelectContent>
-                                          </Select>
-                                      </div>
-                                      <Button onClick={handleStartGame} size="lg" className="w-full">Start Game</Button>
-                                  </div>
-                              </>
-                          )}
-                          {isOwner && activePlayers.length < 2 && (
-                              <p className="mt-4 text-sm text-muted-foreground animate-pulse">Waiting for at least one more player to join...</p>
-                          )}
-                          {!isOwner && (
-                               <p className="mt-4 text-sm text-muted-foreground animate-pulse">Waiting for {gameState.players.find(p => p.id === gameState.ownerId)?.name || 'the host'} to start the game.</p>
-                          )}
-                      </CardContent>
-                  </Card>
-              ) : (
-                  <Card className="p-8 text-center m-auto animate-pulse">
-                      <CardTitle className="text-2xl mb-2">Next round is starting!</CardTitle>
-                      <CardContent className="space-y-4">
-                          <p className="text-lg text-muted-foreground">{isDrawer ? "You are choosing a word..." : `${gameState.players.find(p => p.id === gameState.drawerId)?.name || 'Someone'} is choosing a word...`}</p>
-                      </CardContent>
-                  </Card>
-              )}
-          </div>
+          lobbyScreen
       ) : isMobile ? (
         <div className="flex h-dvh flex-col bg-background">
-          {/* Top Bar */}
+          {/* Top Bar (Fixed) */}
           <div className="flex-shrink-0 flex items-center justify-between gap-2 p-2 border-b">
               <div className={cn("flex items-center gap-2 font-bold w-1/4", gameState.roundTimer <= 15 ? 'text-red-500' : 'text-primary')}>
                   <Clock className="w-5 h-5" />
@@ -1072,18 +1076,21 @@ export default function DoodleDuelClient() {
               </div>
           </div>
 
-          {/* Canvas Area */}
-           <div className="relative h-[40%] flex-shrink-0 bg-slate-100 dark:bg-slate-800 rounded-lg m-2">
-              <DrawingCanvas ref={canvasRef} onDrawStart={handleStartPath} onDrawing={handleDrawPath} isDrawingPlayer={isDrawer} drawingHistory={gameState.drawingHistory}/>
+          {/* Main Content Area (Flexible & Scrollable) */}
+          <div className="flex-grow flex flex-col min-h-0 overflow-y-auto">
+            {/* Canvas Area */}
+            <div className="relative h-[45svh] flex-shrink-0 bg-slate-100 dark:bg-slate-800 rounded-lg m-2">
+                <DrawingCanvas ref={canvasRef} onDrawStart={handleStartPath} onDrawing={handleDrawPath} isDrawingPlayer={isDrawer} drawingHistory={gameState.drawingHistory}/>
+            </div>
+            
+            {/* Players and Chat Area */}
+            <div className="flex-grow flex gap-2 p-2 pt-0 min-h-0">
+                <div className="w-2/5 h-full"><Scoreboard players={gameState.players} currentPlayerId={socket?.id ?? null} /></div>
+                <div className="w-3/5 h-full"><ChatBox messages={gameState.messages} showForm={false} /></div>
+            </div>
           </div>
           
-          {/* Players and Chat Area */}
-          <div className="flex-grow flex gap-2 p-2 pt-0 min-h-0">
-              <div className="w-2/5 h-full"><Scoreboard players={gameState.players} currentPlayerId={socket?.id ?? null} /></div>
-              <div className="w-3/5 h-full"><ChatBox messages={gameState.messages} showForm={false} /></div>
-          </div>
-          
-          {/* Input or Toolbar */}
+          {/* Input or Toolbar (Fixed at bottom) */}
           <div className="flex-shrink-0 p-2 border-t bg-background">
               {isDrawer ? (
                    <Toolbar color={currentColor} setColor={setCurrentColor} lineWidth={currentLineWidth} setLineWidth={setCurrentLineWidth} onUndo={handleUndo} onClear={handleClear} disabled={!isDrawer} />
@@ -1109,7 +1116,7 @@ export default function DoodleDuelClient() {
           </div>
         </div>
       ) : (
-        <>
+        <main className="flex h-dvh max-h-dvh flex-col overflow-hidden bg-background">
             {/* Desktop Top Bar */}
             <div className="flex-shrink-0">
                 <div className="flex items-center justify-between gap-4 p-2">
@@ -1143,9 +1150,8 @@ export default function DoodleDuelClient() {
                     <ChatBox messages={gameState.messages} onSendMessage={handleGuess} disabled={guessInputDisabled} showForm={!isDrawer} />
                 </div>
             </div>
-        </>
+        </main>
       )}
-      </main>
 
       <div className="pointer-events-none fixed bottom-16 right-4 z-50 flex w-full max-w-xs flex-col items-end gap-2 md:bottom-4">
           {notifications.map((notif) => (
