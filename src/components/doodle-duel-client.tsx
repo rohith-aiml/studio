@@ -16,7 +16,6 @@ import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import {
@@ -195,38 +194,37 @@ const JoinScreen = ({ onJoin }: { onJoin: (name: string, avatarUrl: string, room
   );
 };
 
-
 const Scoreboard = ({ players, currentPlayerId }: { players: Player[]; currentPlayerId: string | null; }) => (
   <Card className="h-full flex flex-col min-h-0">
-    <CardHeader className="p-4">
-      <CardTitle className="flex items-center gap-2 text-xl">
+    <CardHeader className="p-2 md:p-4">
+      <CardTitle className="flex items-center gap-2 text-base md:text-xl">
         <Users className="text-primary" /> Players
       </CardTitle>
     </CardHeader>
-    <CardContent className="flex-grow overflow-y-auto p-2 space-y-2">
-      <ul className="space-y-3">
+    <CardContent className="flex-grow overflow-y-auto p-1 md:p-2 space-y-1 md:space-y-2">
+      <ul className="space-y-2">
         {players.sort((a, b) => b.score - a.score).map((p) => (
           <li key={p.id || p.name} className={cn(
-              "flex items-center justify-between p-2 rounded-lg transition-all", 
+              "flex items-center justify-between p-1.5 rounded-lg transition-all",
               p.id === currentPlayerId && "bg-accent/50",
               p.disconnected && "opacity-50",
               p.hasGuessed && !p.isDrawing && "bg-green-100 dark:bg-green-900"
             )}>
-            <div className="flex items-center gap-3">
-              <Avatar className="w-10 h-10">
+            <div className="flex items-center gap-2 min-w-0">
+              <Avatar className="w-8 h-8 shrink-0">
                 <AvatarImage src={p.avatarUrl} />
-                <AvatarFallback className="text-2xl">
+                <AvatarFallback className="text-xl">
                     {p.avatarUrl.startsWith('http') ? p.name.charAt(0) : p.avatarUrl}
                 </AvatarFallback>
               </Avatar>
-              <div className="flex flex-col">
-                <span className="font-medium text-base">{p.name}</span>
+              <div className="flex flex-col min-w-0">
+                <span className="font-medium text-sm truncate">{p.name}</span>
                 {p.disconnected && <span className="text-xs text-muted-foreground">(disconnected)</span>}
               </div>
-              {p.isDrawing && <Pencil className="w-4 h-4 text-primary" />}
             </div>
-            <div className="flex items-center gap-2">
-              <span className="font-bold text-lg text-primary">{p.score}</span>
+            <div className="flex items-center gap-2 shrink-0">
+              {p.isDrawing && <Pencil className="w-4 h-4 text-primary" />}
+              <span className="font-bold text-base text-primary">{p.score}</span>
             </div>
           </li>
         ))}
@@ -461,10 +459,10 @@ const ChatBox = ({ messages, onSendMessage, disabled }: { messages: Message[], o
     
     return (
         <Card className="flex-grow flex flex-col min-h-0 h-full">
-            <CardHeader className="p-4"><CardTitle className="text-xl">Chat & Guesses</CardTitle></CardHeader>
+            <CardHeader className="p-2 md:p-4"><CardTitle className="text-base md:text-xl">Chat</CardTitle></CardHeader>
             <CardContent className="flex-grow overflow-y-auto p-2 space-y-2">
                 {messages.map((msg, i) => (
-                    <div key={i} className={cn("p-2 rounded-lg text-sm md:text-base", msg.isCorrect ? "bg-green-100 dark:bg-green-900" : "bg-muted/50")}>
+                    <div key={i} className={cn("p-2 rounded-lg text-sm", msg.isCorrect ? "bg-green-100 dark:bg-green-900" : "bg-muted/50")}>
                         {msg.isCorrect ? (
                              <span className="text-green-600 dark:text-green-400 font-medium">{msg.text}</span>
                         ) : (
@@ -474,7 +472,7 @@ const ChatBox = ({ messages, onSendMessage, disabled }: { messages: Message[], o
                 ))}
                 <div ref={messagesEndRef} />
             </CardContent>
-            <form onSubmit={handleSubmit} className="p-2 md:p-4 border-t">
+            <form onSubmit={handleSubmit} className="p-2 border-t">
                 <div className="relative">
                     <Input
                         placeholder={disabled ? "Only guessers can chat" : "Type your guess..."}
@@ -652,10 +650,13 @@ export default function DoodleDuelClient() {
   const [currentLineWidth, setCurrentLineWidth] = useState(BRUSH_SIZES[1]);
 
   const [selectedRounds, setSelectedRounds] = useState(ROUND_OPTIONS[2]);
+  const [closeGuessHint, setCloseGuessHint] = useState<string | null>(null);
   
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const aiCheckIntervalRef = useRef<NodeJS.Timeout>();
   const notificationSoundRef = useRef<HTMLAudioElement>(null);
+  const closeGuessTimeoutRef = useRef<NodeJS.Timeout>();
+
 
   const { toast } = useToast();
 
@@ -676,11 +677,24 @@ export default function DoodleDuelClient() {
     setSocket(newSocket);
     return () => { newSocket.disconnect(); };
   }, []);
+  
+  const handleCloseGuess = useCallback((message: string) => {
+    notificationSoundRef.current?.play().catch(e => console.error("Error playing sound:", e));
+    
+    if (closeGuessTimeoutRef.current) {
+        clearTimeout(closeGuessTimeoutRef.current);
+    }
+    
+    setCloseGuessHint(message);
+    
+    closeGuessTimeoutRef.current = setTimeout(() => {
+        setCloseGuessHint(null);
+    }, 3000);
+  }, []);
 
   useEffect(() => {
     if (!socket) return;
     
-    // Cleanup previous listeners to avoid duplicates
     socket.off();
 
     const onConnect = () => console.log("Connected to server!");
@@ -728,14 +742,6 @@ export default function DoodleDuelClient() {
             duration: 10000,
         });
     };
-    const onCloseGuess = (message: string) => {
-        notificationSoundRef.current?.play().catch(e => console.error("Error playing sound:", e));
-        toast({
-            title: "Hint",
-            description: (<div className="flex items-center gap-2"><Sparkles className="text-yellow-400" /><span>{message}</span></div>),
-            duration: 3000,
-        });
-    };
     const onError = (message: string) => {
         toast({ title: "Error", description: message, variant: "destructive" });
         if (message.includes("Room not found") || message.includes("active in this room")) {
@@ -759,7 +765,7 @@ export default function DoodleDuelClient() {
     socket.on("promptWordChoice", onPromptWordChoice);
     socket.on("roundEnd", onRoundEnd);
     socket.on("aiSuggestion", onAiSuggestion);
-    socket.on("closeGuess", onCloseGuess);
+    socket.on("closeGuess", handleCloseGuess);
     socket.on("error", onError);
 
     return () => {
@@ -775,10 +781,13 @@ export default function DoodleDuelClient() {
         socket.off("promptWordChoice", onPromptWordChoice);
         socket.off("roundEnd", onRoundEnd);
         socket.off("aiSuggestion", onAiSuggestion);
-        socket.off("closeGuess", onCloseGuess);
+        socket.off("closeGuess", handleCloseGuess);
         socket.off("error", onError);
+        if (closeGuessTimeoutRef.current) {
+            clearTimeout(closeGuessTimeoutRef.current);
+        }
     };
-  }, [socket, toast]);
+  }, [socket, toast, handleCloseGuess]);
   
   useEffect(() => {
     if (canvasRef.current && (canvasRef.current as any).updateBrush) {
@@ -841,13 +850,6 @@ export default function DoodleDuelClient() {
   const handleUndo = useCallback(() => socket?.emit("undo"), [socket]);
   const handleClear = useCallback(() => socket?.emit("clearCanvas"), [socket]);
   
-  if (!name) return <JoinScreen onJoin={handleJoin} />;
-  if (gameState.isGameOver) {
-    return <GameOverScreen players={gameState.players} ownerId={gameState.ownerId} currentSocketId={socket?.id ?? null} onPlayAgain={handlePlayAgain} />;
-  }
-
-  const activePlayers = gameState.players.filter(p => !p.disconnected);
-
   const copyInvite = () => {
     if (!roomId) return;
     const inviteLink = `${window.location.origin}/?roomId=${roomId}`;
@@ -858,6 +860,13 @@ export default function DoodleDuelClient() {
         });
     });
   }
+
+  if (!name) return <JoinScreen onJoin={handleJoin} />;
+  if (gameState.isGameOver) {
+    return <GameOverScreen players={gameState.players} ownerId={gameState.ownerId} currentSocketId={socket?.id ?? null} onPlayAgain={handlePlayAgain} />;
+  }
+
+  const activePlayers = gameState.players.filter(p => !p.disconnected);
 
   return (
     <>
@@ -976,7 +985,7 @@ export default function DoodleDuelClient() {
             </div>
 
             {/* Center Column: Canvas */}
-            <div className="flex flex-col min-h-0 gap-2 order-first md:order-none h-[60%] md:h-auto md:flex-1">
+            <div className="flex flex-col min-h-0 gap-2 order-first md:order-none h-[50%] md:h-auto md:flex-1">
               <div className="relative w-full flex-1 flex items-center justify-center min-h-0">
                   <div className="relative w-full h-full">
                     <DrawingCanvas ref={canvasRef} onDrawStart={handleStartPath} onDrawing={handleDrawPath} isDrawingPlayer={isDrawer} drawingHistory={gameState.drawingHistory}/>
@@ -985,33 +994,42 @@ export default function DoodleDuelClient() {
               {isDrawer && <Toolbar color={currentColor} setColor={setCurrentColor} lineWidth={currentLineWidth} setLineWidth={setCurrentLineWidth} onUndo={handleUndo} onClear={handleClear} disabled={!isDrawer} />}
             </div>
 
-            {/* Right Column: Chat (Desktop) / Tabs (Mobile) */}
-            <div className="w-full md:w-[320px] lg:w-[350px] flex flex-col min-h-0 flex-1 md:flex-initial h-[40%] md:h-auto">
+            {/* Right Column: Chat (Desktop) / Bottom Section (Mobile) */}
+            <div className="w-full md:w-[320px] lg:w-[350px] flex flex-col min-h-0 flex-1 md:flex-initial h-[50%] md:h-auto">
+              
+              {/* Mobile View: Combined Scores and Chat */}
+              <div className="flex md:hidden flex-row h-full gap-2 min-h-0">
+                <div className="w-2/5 h-full">
+                  <Scoreboard players={gameState.players} currentPlayerId={socket?.id ?? null} />
+                </div>
+                <div className="w-3/5 h-full">
+                  <ChatBox messages={gameState.messages} onSendMessage={handleGuess} disabled={isDrawer || (me?.hasGuessed ?? false) || me?.disconnected === true} />
+                </div>
+              </div>
+              
+              {/* Desktop View: Chat Only */}
               <div className="hidden md:flex flex-col h-full">
                 <ChatBox messages={gameState.messages} onSendMessage={handleGuess} disabled={isDrawer || (me?.hasGuessed ?? false) || me?.disconnected === true} />
               </div>
-              <div className="h-full md:hidden min-h-0">
-                 <Tabs defaultValue="chat" className="flex flex-col h-full">
-                    <TabsList className="grid w-full grid-cols-2">
-                      <TabsTrigger value="chat">Chat</TabsTrigger>
-                      <TabsTrigger value="scores">Scores</TabsTrigger>
-                    </TabsList>
-                    <TabsContent value="chat" className="mt-2 flex-1 min-h-0">
-                      <ChatBox messages={gameState.messages} onSendMessage={handleGuess} disabled={isDrawer || (me?.hasGuessed ?? false) || me?.disconnected === true} />
-                    </TabsContent>
-                    <TabsContent value="scores" className="mt-2 flex-1 min-h-0">
-                      <Scoreboard players={gameState.players} currentPlayerId={socket?.id ?? null} />
-                    </TabsContent>
-                </Tabs>
-              </div>
+
             </div>
           </div>
         </div>
       )}
       </main>
 
+      {closeGuessHint && (
+        <div className="fixed bottom-20 md:bottom-4 right-4 z-50 bg-slate-800 text-white rounded-lg px-4 py-2 text-sm shadow-lg animate-in fade-in-0 slide-in-from-bottom-10">
+            <div className="flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-yellow-300" />
+                <span>{closeGuessHint}</span>
+            </div>
+        </div>
+      )}
+
       <audio ref={notificationSoundRef} src="/notification.mp3" preload="auto" className="hidden" />
       <Toaster />
     </>
   );
 }
+
