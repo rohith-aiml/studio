@@ -41,6 +41,7 @@ import Confetti from "react-confetti";
 import { io, Socket } from "socket.io-client";
 import type { AnalyzeDrawingHistoryOutput } from "@/ai/flows/skip-vote-trigger";
 import { Toaster } from "./ui/toaster";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 // --- TYPES ---
 type Player = {
@@ -682,6 +683,7 @@ export default function DoodleDuelClient() {
   const notificationIdCounter = useRef(0);
 
   const { toast } = useToast();
+  const isMobile = useIsMobile();
 
   const gameStateRef = useRef(gameState);
   useEffect(() => {
@@ -692,17 +694,34 @@ export default function DoodleDuelClient() {
   const me = gameState.players.find(p => p.id === socket?.id);
   const isOwner = me?.id === gameState.ownerId;
   const isDrawer = me?.isDrawing ?? false;
+  const guessInputDisabled = isDrawer || (me?.hasGuessed ?? false) || me?.disconnected === true;
 
   // --- Effects ---
 
   useEffect(() => {
-    const newSocket = io();
-    setSocket(newSocket);
+    let newSocket: Socket;
 
-    return () => { 
-        newSocket.disconnect(); 
+    const initializeSocket = () => {
+        // Disconnect any existing socket
+        if (socket) {
+            socket.disconnect();
+        }
+
+        newSocket = io({
+            reconnection: true,
+            reconnectionAttempts: 5,
+            reconnectionDelay: 1000,
+        });
+        setSocket(newSocket);
     };
-  }, []);
+
+    initializeSocket();
+
+    return () => {
+        if (newSocket) newSocket.disconnect();
+    };
+}, []);
+
   
   const addNotification = useCallback((content: React.ReactNode, icon?: React.ReactNode) => {
     const id = notificationIdCounter.current++;
@@ -738,7 +757,13 @@ export default function DoodleDuelClient() {
     // Clean up old listeners before attaching new ones to prevent duplicates.
     socket.off();
 
-    const onConnect = () => console.log("Connected to server!");
+    const onConnect = () => {
+        console.log("Connected to server!");
+        // If we were in a room before, try to rejoin
+        if (name && roomId) {
+            socket.emit("joinRoom", { name, avatarUrl: me?.avatarUrl || AVATARS[0].url, roomId });
+        }
+    };
     const onRoomCreated = (newRoomId: string) => {
         setRoomId(newRoomId);
         window.history.pushState({}, '', `/?roomId=${newRoomId}`);
@@ -787,7 +812,7 @@ export default function DoodleDuelClient() {
         toast({ title: "Error", description: message, variant: "destructive" });
         if (message.includes("Room not found") || message.includes("active in this room")) {
             setTimeout(() => {
-                window.history.pushState({}, '', '/');
+                window.history.replaceState({}, '', '/');
                 setName(null);
                 setRoomId(null);
             }, 2000);
@@ -826,10 +851,10 @@ export default function DoodleDuelClient() {
         socket.off("aiSuggestion", onAiSuggestion);
         socket.off("closeGuess", handleCloseGuess);
         socket.off("playerGuessed", handlePlayerGuessed);
-        socket.off("correctGuessNotification", handleCorrectGuessNotification);
+        socket.off("correctGuessNotification", onCorrectGuessNotification);
         socket.off("error", onError);
     };
-  }, [socket, toast, handleCloseGuess, handlePlayerGuessed, handleCorrectGuessNotification]);
+  }, [socket, name, roomId, me, toast, handleCloseGuess, handlePlayerGuessed, handleCorrectGuessNotification]);
   
   useEffect(() => {
     if (canvasRef.current && (canvasRef.current as any).updateBrush) {
@@ -916,12 +941,103 @@ export default function DoodleDuelClient() {
   }
 
   if (!name) return <JoinScreen onJoin={handleJoin} />;
+  
   if (gameState.isGameOver) {
     return <GameOverScreen players={gameState.players} ownerId={gameState.ownerId} currentSocketId={socket?.id ?? null} onPlayAgain={handlePlayAgain} />;
   }
 
   const activePlayers = gameState.players.filter(p => !p.disconnected);
-  const guessInputDisabled = isDrawer || (me?.hasGuessed ?? false) || me?.disconnected === true;
+  
+  // NEW: Dedicated layout for mobile guessers
+  if (isMobile && !isDrawer && gameState.isRoundActive) {
+    return (
+      <>
+        <main className="flex h-dvh max-h-dvh flex-col overflow-hidden bg-background">
+          {/* Top Bar */}
+          <div className="flex-shrink-0">
+            <div className="flex items-center justify-between gap-4 p-2">
+              <div className="flex w-1/4 items-center gap-2 text-lg font-bold text-primary">
+                <Clock className="h-5 w-5" />
+                <span>{gameState.roundTimer}</span>
+              </div>
+              <WordDisplay
+                maskedWord={gameState.currentWord}
+                isDrawing={false}
+                fullWord=""
+              />
+              <div className="w-1/4" />
+            </div>
+          </div>
+
+          {/* Canvas */}
+          <div className="relative flex-1 p-2 pb-0 min-h-0">
+            <DrawingCanvas
+              ref={canvasRef}
+              onDrawStart={() => {}}
+              onDrawing={() => {}}
+              isDrawingPlayer={false}
+              drawingHistory={gameState.drawingHistory}
+            />
+          </div>
+
+          {/* Guess Input */}
+          <div className="flex-shrink-0 border-t bg-background p-2">
+            <form onSubmit={handleMobileGuessSubmit}>
+              <div className="relative">
+                <Input
+                  placeholder={
+                    guessInputDisabled
+                      ? 'You guessed correctly!'
+                      : 'Type your guess...'
+                  }
+                  value={mobileGuess}
+                  onChange={(e) => setMobileGuess(e.target.value)}
+                  disabled={guessInputDisabled}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault()
+                      handleMobileGuessSubmit(e)
+                    }
+                  }}
+                />
+                <Button
+                  type="submit"
+                  size="icon"
+                  className="absolute right-1 top-1/2 h-8 w-8 -translate-y-1/2"
+                  disabled={guessInputDisabled}
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            </form>
+          </div>
+        </main>
+
+        {/* Notifications */}
+        <div className="pointer-events-none fixed bottom-[4.5rem] right-4 z-50 flex w-full max-w-xs flex-col items-end gap-2">
+          {notifications.map((notif) => (
+            <div
+              key={notif.id}
+              className="pointer-events-auto animate-in fade-in-0 slide-in-from-bottom-10 rounded-lg bg-slate-800 px-4 py-2 text-sm text-white shadow-lg"
+            >
+              <div className="flex items-center gap-2">
+                {notif.icon}
+                <div>{notif.content}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <audio
+          ref={notificationSoundRef}
+          src="/notification.mp3"
+          preload="auto"
+          className="hidden"
+        />
+        <Toaster />
+      </>
+    )
+  }
 
   return (
     <>
@@ -1019,7 +1135,7 @@ export default function DoodleDuelClient() {
         <>
             {/* Main Game Content */}
             <div className="flex-shrink-0">
-                <div className="flex items-center justify-between gap-4 px-2">
+                <div className="flex items-center justify-between gap-4 p-2">
                     <div className="flex items-center gap-2 text-lg font-bold text-primary w-1/4">
                         <Clock className="w-5 h-5" />
                         <span>{gameState.roundTimer}</span>
@@ -1052,45 +1168,32 @@ export default function DoodleDuelClient() {
                 </div>
 
                 {/* Right Column: Chat (Desktop) / Bottom Section (Mobile) */}
-                <div className="w-full md:w-[320px] lg:w-[350px] flex flex-col min-h-0 h-full md:h-auto md:flex-initial">
-                    {/* Mobile View: Combined Scores and Chat */}
-                    <div className="flex md:hidden flex-row h-full gap-2 min-h-0">
-                        <div className="w-2/5 h-full">
-                        <Scoreboard players={gameState.players} currentPlayerId={socket?.id ?? null} />
-                        </div>
-                        <div className="w-3/5 h-full">
-                        <ChatBox messages={gameState.messages} showForm={false} />
-                        </div>
+                <div className="w-full md:w-[320px] lg:w-[350px] flex-col min-h-0 h-full md:h-auto md:flex-initial hidden md:flex">
+                    <ChatBox messages={gameState.messages} onSendMessage={handleGuess} disabled={guessInputDisabled} showForm={true} />
+                </div>
+                
+                {/* Mobile Drawer view */}
+                <div className="flex md:hidden flex-col h-full gap-2 min-h-0">
+                    <div className="flex-1 flex flex-row h-full gap-2 min-h-0">
+                        <div className="w-2/5 h-full"><Scoreboard players={gameState.players} currentPlayerId={socket?.id ?? null} /></div>
+                        <div className="w-3/5 h-full"><ChatBox messages={gameState.messages} showForm={false} /></div>
                     </div>
-                    
-                    {/* Desktop View: Chat Only */}
-                    <div className="hidden md:flex flex-col h-full">
-                        <ChatBox messages={gameState.messages} onSendMessage={handleGuess} disabled={guessInputDisabled} showForm={true} />
+                    <div className="block md:hidden flex-shrink-0">
+                        <form onSubmit={handleMobileGuessSubmit}>
+                            <div className="relative">
+                                <Input
+                                    placeholder={guessInputDisabled ? "Only guessers can chat" : "Type your guess..."}
+                                    value={mobileGuess}
+                                    onChange={(e) => setMobileGuess(e.target.value)}
+                                    disabled={guessInputDisabled}
+                                />
+                                <Button type="submit" size="icon" className="absolute right-1 top-1/2 -translate-y-1/2 h-8 w-8" disabled={guessInputDisabled}>
+                                    <ChevronRight className="w-4 h-4" />
+                                </Button>
+                            </div>
+                        </form>
                     </div>
                 </div>
-            </div>
-
-            {/* Mobile Guess Input */}
-            <div className="p-2 border-t bg-background block md:hidden flex-shrink-0">
-                <form onSubmit={handleMobileGuessSubmit}>
-                    <div className="relative">
-                        <Input
-                            placeholder={guessInputDisabled ? "Only guessers can chat" : "Type your guess..."}
-                            value={mobileGuess}
-                            onChange={(e) => setMobileGuess(e.target.value)}
-                            disabled={guessInputDisabled}
-                            onKeyDown={(e) => {
-                                if (e.key === 'Enter' && !e.shiftKey) {
-                                    e.preventDefault();
-                                    handleMobileGuessSubmit(e);
-                                }
-                            }}
-                        />
-                        <Button type="submit" size="icon" className="absolute right-1 top-1/2 -translate-y-1/2 h-8 w-8" disabled={guessInputDisabled}>
-                            <ChevronRight className="w-4 h-4" />
-                        </Button>
-                    </div>
-                </form>
             </div>
         </>
       )}
@@ -1112,3 +1215,5 @@ export default function DoodleDuelClient() {
     </>
   );
 }
+
+    
