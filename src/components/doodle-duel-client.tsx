@@ -926,8 +926,9 @@ export default function DoodleDuelClient() {
     if (guess && !guessInputDisabled) {
       handleGuess(guess);
       setMobileGuess("");
-      // Keep focus to prevent keyboard from closing
-      mobileInputRef.current?.focus(); 
+      if (mobileInputRef.current) {
+        mobileInputRef.current.focus();
+      }
     }
   };
 
@@ -1077,14 +1078,14 @@ export default function DoodleDuelClient() {
           </div>
 
           {/* Main Content Area (Flexible & Scrollable) */}
-          <div className="flex-grow flex flex-col min-h-0 overflow-y-auto">
-            {/* Canvas Area */}
-            <div className="relative h-[45svh] flex-shrink-0 bg-slate-100 dark:bg-slate-800 rounded-lg m-2">
+          <div className="flex-grow flex flex-col min-h-0 overflow-y-auto p-2 gap-2">
+            {/* Canvas Area (Fixed Height, Non-Shrinking) */}
+            <div className="relative h-[250px] flex-shrink-0 bg-slate-100 dark:bg-slate-800 rounded-lg">
                 <DrawingCanvas ref={canvasRef} onDrawStart={handleStartPath} onDrawing={handleDrawPath} isDrawingPlayer={isDrawer} drawingHistory={gameState.drawingHistory}/>
             </div>
             
-            {/* Players and Chat Area */}
-            <div className="flex-grow flex gap-2 p-2 pt-0 min-h-0">
+            {/* Players and Chat Area (This part scrolls) */}
+            <div className="flex-grow flex gap-2 min-h-0">
                 <div className="w-2/5 h-full"><Scoreboard players={gameState.players} currentPlayerId={socket?.id ?? null} /></div>
                 <div className="w-3/5 h-full"><ChatBox messages={gameState.messages} showForm={false} /></div>
             </div>
