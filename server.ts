@@ -191,7 +191,7 @@ app.prepare().then(() => {
     if (!newDrawer) return;
 
     room.gameState.drawingHistory = [];
-    room.gameState.messages = [{ playerName: "System", text: `${newDrawer.name} is choosing a word...`, isCorrect: false }];
+    room.gameState.messages.push({ playerName: "System", text: `${newDrawer.name} is choosing a word...`, isCorrect: false });
     room.gameState.currentWord = "";
     room.gameState.revealedIndices = [];
     room.gameState.roundTimer = 90;
@@ -427,7 +427,7 @@ app.prepare().then(() => {
         room.gameState.currentWord = word;
         room.gameState.isRoundActive = true;
         
-        room.gameState.messages.pop(); // Remove "is choosing..."
+        // Don't remove the "is choosing..." message to preserve chat history
         room.gameState.messages.push({ playerName: "System", text: `${drawer.name} is now drawing!`, isCorrect: false });
         
         room.roundInterval = setInterval(() => gameTick(currentRoomId!), 1000);
@@ -447,6 +447,8 @@ app.prepare().then(() => {
         const normalizedGuess = text.trim().toLowerCase();
         const normalizedWord = room.gameState.currentWord.trim().toLowerCase();
         const isCorrect = normalizedGuess === normalizedWord;
+        
+        room.gameState.messages.push({ playerName: player.name, text, isCorrect });
 
         if (isCorrect) {
             player.hasGuessed = true;
@@ -458,8 +460,7 @@ app.prepare().then(() => {
                 drawer.score += 20;
             }
 
-            room.gameState.messages.push({ playerName: "System", text: `${player.name} guessed the word! (+${guesserPoints} pts)`, isCorrect: true });
-            io.to(currentRoomId).emit("correctGuessNotification", { playerName: player.name });
+            io.to(currentRoomId).emit("playerGuessed", { playerName: player.name, points: guesserPoints });
 
             const allGuessed = room.gameState.players.filter(p => !p.isDrawing && !p.disconnected).every(p => p.hasGuessed);
             if (allGuessed) {
@@ -467,13 +468,13 @@ app.prepare().then(() => {
             }
              broadcastGameState(currentRoomId);
         } else {
-            room.gameState.messages.push({ playerName: player.name, text, isCorrect: false });
             if (room.gameState.currentWord) {
                 const distance = levenshteinDistance(normalizedGuess, normalizedWord);
                 if (distance === 1) {
                     socket.emit('closeGuess', "So close! One letter is off.");
                 }
             }
+             io.to(currentRoomId).emit("playerGuessed", { playerName: player.name, guess: text });
             broadcastGameState(currentRoomId);
         }
     });

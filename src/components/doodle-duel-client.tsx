@@ -26,6 +26,7 @@ import {
   Eraser,
   Eye,
   EyeOff,
+  MessageSquare,
   PartyPopper,
   Pencil,
   Sparkles,
@@ -97,7 +98,7 @@ const ROUND_TIME = 90; // in seconds
 const AI_CHECK_INTERVAL = 15000; // 15 seconds
 const ROUND_OPTIONS = [1, 2, 3, 5, 10];
 const WORD_CHOICE_TIME = 15;
-const NOTIFICATION_DURATION = 4000; // 4 seconds
+const NOTIFICATION_DURATION = 3000; // 3 seconds
 
 const DRAWING_COLORS = [
   "#000000", "#ef4444", "#fb923c", "#facc15", "#4ade80", "#22d3ee", "#3b82f6", "#a78bfa", "#f472b6", "#ffffff",
@@ -197,7 +198,7 @@ const JoinScreen = ({ onJoin }: { onJoin: (name: string, avatarUrl: string, room
           </form>
         </CardContent>
         <CardFooter className="justify-center text-xs text-muted-foreground">
-            <p>v1</p>
+            <p>v1.1</p>
         </CardFooter>
       </Card>
     </div>
@@ -302,7 +303,6 @@ const DrawingCanvas = React.forwardRef<HTMLCanvasElement, {
             ctx.fillStyle = 'white';
             ctx.fillRect(0, 0, rect.width, rect.height);
 
-
             drawingHistory.forEach(({ path, color, lineWidth }) => {
                 ctx.strokeStyle = color;
                 ctx.lineWidth = lineWidth;
@@ -310,8 +310,10 @@ const DrawingCanvas = React.forwardRef<HTMLCanvasElement, {
                 ctx.lineJoin = "round";
                 ctx.beginPath();
                 path.forEach((point, index) => {
-                    if (index === 0) ctx.moveTo(point.x, point.y);
-                    else ctx.lineTo(point.x, point.y);
+                    const x = point.x * rect.width;
+                    const y = point.y * rect.height;
+                    if (index === 0) ctx.moveTo(x, y);
+                    else ctx.lineTo(x, y);
                 });
                 ctx.stroke();
             });
@@ -344,8 +346,8 @@ const DrawingCanvas = React.forwardRef<HTMLCanvasElement, {
             }
             
             return { 
-                x: (clientX - rect.left), 
-                y: (clientY - rect.top)
+                x: (clientX - rect.left) / rect.width, 
+                y: (clientY - rect.top) / rect.height
             };
         };
         
@@ -366,7 +368,8 @@ const DrawingCanvas = React.forwardRef<HTMLCanvasElement, {
                 currentPath.current = newPathData.path;
                 
                 ctx.beginPath();
-                ctx.moveTo(coords.x, coords.y);
+                const rect = canvas.getBoundingClientRect();
+                ctx.moveTo(coords.x * rect.width, coords.y * rect.height);
                 ctx.strokeStyle = newPathData.color;
                 ctx.lineWidth = newPathData.lineWidth;
                 ctx.lineCap = "round";
@@ -384,7 +387,8 @@ const DrawingCanvas = React.forwardRef<HTMLCanvasElement, {
 
             const coords = getCoords(e.nativeEvent);
             if (coords) {
-                ctx.lineTo(coords.x, coords.y);
+                const rect = canvas.getBoundingClientRect();
+                ctx.lineTo(coords.x * rect.width, coords.y * rect.height);
                 ctx.stroke();
 
                 currentPath.current.push(coords);
@@ -473,28 +477,27 @@ const ChatBox = ({ messages, onSendMessage, disabled, showForm = true }: { messa
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }, [messages]);
 
-    const sendMessage = () => {
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
         if (message.trim() && onSendMessage) {
             onSendMessage(message.trim());
             setMessage("");
         }
     };
     
-    const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            sendMessage();
-        }
-    };
-    
     return (
         <Card className="flex-grow flex flex-col min-h-0 h-full">
-            <CardHeader className="p-2"><CardTitle className="text-base">Chat</CardTitle></CardHeader>
+            <CardHeader className="p-2"><CardTitle className="text-base flex items-center gap-1"><MessageSquare className="w-4 h-4 text-primary"/>Chat</CardTitle></CardHeader>
             <CardContent className="flex-grow overflow-y-auto p-2 space-y-2">
                 {messages.map((msg, i) => (
-                    <div key={i} className={cn("p-1.5 rounded-md text-xs", msg.isCorrect ? "bg-green-100 dark:bg-green-900" : "bg-muted/50")}>
+                    <div key={i} className={cn(
+                        "p-1.5 rounded-md text-xs", 
+                        msg.isCorrect ? "bg-green-100 dark:bg-green-900" : "bg-muted/50"
+                    )}>
                         {msg.isCorrect ? (
-                             <span className="text-green-600 dark:text-green-400 font-medium">{msg.text}</span>
+                             <span className="text-green-600 dark:text-green-400 font-medium">
+                                <span className="font-bold text-primary">{msg.playerName}: </span> {msg.text}
+                            </span>
                         ) : (
                            <span><span className="font-bold text-primary">{msg.playerName}: </span> {msg.text}</span>
                         )}
@@ -503,20 +506,19 @@ const ChatBox = ({ messages, onSendMessage, disabled, showForm = true }: { messa
                 <div ref={messagesEndRef} />
             </CardContent>
             {showForm && (
-                <div className="p-2 border-t">
+                <form onSubmit={handleSubmit} className="p-2 border-t">
                     <div className="relative">
                         <Input
                             placeholder={disabled ? "Only guessers can chat" : "Type your guess..."}
                             value={message}
                             onChange={(e) => setMessage(e.target.value)}
-                            onKeyDown={handleKeyDown}
                             disabled={disabled}
                         />
-                        <Button type="button" onClick={sendMessage} size="icon" className="absolute right-1 top-1/2 -translate-y-1/2 h-8 w-8" disabled={disabled}>
+                        <Button type="submit" size="icon" className="absolute right-1 top-1/2 -translate-y-1/2 h-8 w-8" disabled={disabled}>
                             <ChevronRight className="w-4 h-4" />
                         </Button>
                     </div>
-                </div>
+                </form>
             )}
         </Card>
     );
@@ -745,14 +747,24 @@ export default function DoodleDuelClient() {
     addNotification(message, <Sparkles className="w-4 h-4" />, 'warning');
   }, [addNotification]);
   
-  const handleCorrectGuessNotification = useCallback(({ playerName }: { playerName: string }) => {
-    // notificationSoundRef.current?.play().catch(e => console.error("Error playing sound:", e));
-    addNotification(
-      <span><span className="font-bold">{playerName}</span> guessed the word!</span>,
-      <Check className="w-4 h-4" />,
-      'success'
-    );
+  const handlePlayerGuessed = useCallback(({ playerName, guess, points }: { playerName: string, guess?: string, points?: number }) => {
+    if (points) {
+      // Correct guess
+      // notificationSoundRef.current?.play().catch(e => console.error("Error playing sound:", e));
+      addNotification(
+        <span><span className="font-bold">{playerName}</span> guessed the word! (+{points} pts)</span>,
+        <Check className="w-4 h-4" />,
+        'success'
+      );
+    } else if (guess) {
+      // Incorrect guess
+      addNotification(
+        <span><span className="font-bold">{playerName}:</span> {guess}</span>,
+        <MessageSquare className="w-4 h-4" />
+      );
+    }
   }, [addNotification]);
+
 
   useEffect(() => {
     if (!socket) return;
@@ -833,7 +845,7 @@ export default function DoodleDuelClient() {
     socket.on("roundEnd", onRoundEnd);
     socket.on("aiSuggestion", onAiSuggestion);
     socket.on("closeGuess", handleCloseGuess);
-    socket.on("correctGuessNotification", handleCorrectGuessNotification);
+    socket.on("playerGuessed", handlePlayerGuessed);
     socket.on("error", onError);
 
     return () => {
@@ -850,10 +862,10 @@ export default function DoodleDuelClient() {
         socket.off("roundEnd", onRoundEnd);
         socket.off("aiSuggestion", onAiSuggestion);
         socket.off("closeGuess", handleCloseGuess);
-        socket.off("correctGuessNotification", handleCorrectGuessNotification);
+        socket.off("playerGuessed", handlePlayerGuessed);
         socket.off("error", onError);
     };
-  }, [socket, name, roomId, me, toast, handleCloseGuess, handleCorrectGuessNotification]);
+  }, [socket, name, roomId, me, toast, handleCloseGuess, handlePlayerGuessed]);
   
   useEffect(() => {
     if (canvasRef.current && (canvasRef.current as any).updateBrush) {
@@ -911,17 +923,11 @@ export default function DoodleDuelClient() {
       }
   };
 
-  const handleMobileGuess = () => {
+  const handleMobileGuess = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     handleGuess(mobileGuess);
     setMobileGuess("");
   };
-
-  const handleMobileKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        handleMobileGuess();
-    }
-  }
 
   const handlePlayAgain = () => socket?.emit("playAgain");
   const handleWordChoice = (word: string) => {
@@ -1046,7 +1052,7 @@ export default function DoodleDuelClient() {
               )}
           </div>
       ) : isMobile ? (
-        <div className="flex h-full flex-col">
+         <div className="flex h-full flex-col">
             {/* Top Bar */}
             <div className="flex-shrink-0 flex items-center justify-between gap-2 p-2 border-b">
                 <div className={cn("flex items-center gap-2 font-bold w-1/4", gameState.roundTimer <= 15 ? 'text-red-500' : 'text-primary')}>
@@ -1066,17 +1072,15 @@ export default function DoodleDuelClient() {
             </div>
 
             {/* Main content area */}
-            <div className="flex-grow flex flex-col min-h-0">
-                <div className="relative flex-grow bg-slate-100 dark:bg-slate-800">
+            <div className={cn("flex-grow flex flex-col min-h-0 transition-all duration-300", isInputFocused && !isDrawer ? "pb-[50px]" : "pb-2")}>
+                 <div className="relative flex-grow bg-slate-100 dark:bg-slate-800 p-2 min-h-0" style={{flexBasis: '60%'}}>
                     <DrawingCanvas ref={canvasRef} onDrawStart={handleStartPath} onDrawing={handleDrawPath} isDrawingPlayer={isDrawer} drawingHistory={gameState.drawingHistory}/>
                 </div>
                 
-                {(!isInputFocused || isDrawer) && (
-                    <div className="flex-shrink-0 flex gap-2 p-2 border-t min-h-0 h-[25vh]">
-                        <div className="w-2/5 h-full"><Scoreboard players={gameState.players} currentPlayerId={socket?.id ?? null} /></div>
-                        <div className="w-3/5 h-full"><ChatBox messages={gameState.messages} showForm={false} /></div>
-                    </div>
-                )}
+                <div className={cn("flex-shrink-0 flex gap-2 px-2 pt-2 min-h-0 h-full transition-opacity duration-300", isInputFocused && !isDrawer ? 'opacity-0 h-0 invisible' : 'opacity-100' )} style={{flexBasis: '40%'}}>
+                    <div className="w-2/5 h-full"><Scoreboard players={gameState.players} currentPlayerId={socket?.id ?? null} /></div>
+                    <div className="w-3/5 h-full"><ChatBox messages={gameState.messages} showForm={false} /></div>
+                </div>
             </div>
 
             {/* Input or Toolbar */}
@@ -1084,21 +1088,20 @@ export default function DoodleDuelClient() {
                 {isDrawer ? (
                      <Toolbar color={currentColor} setColor={setCurrentColor} lineWidth={currentLineWidth} setLineWidth={setCurrentLineWidth} onUndo={handleUndo} onClear={handleClear} disabled={!isDrawer} />
                 ) : (
-                    <div className="relative">
+                    <form onSubmit={handleMobileGuess} className="relative">
                         <Input
                             placeholder={guessInputDisabled ? "You've guessed it!" : "Type your guess..."}
                             value={mobileGuess}
                             onChange={(e) => setMobileGuess(e.target.value)}
-                            onKeyDown={handleMobileKeyDown}
                             disabled={guessInputDisabled}
                             onFocus={() => setIsInputFocused(true)}
                             onBlur={() => setIsInputFocused(false)}
                             className="pr-12"
                         />
-                        <Button type="button" onClick={handleMobileGuess} size="icon" className="absolute right-1 top-1/2 -translate-y-1/2 h-8 w-8" disabled={guessInputDisabled}>
+                        <Button type="submit" size="icon" className="absolute right-1 top-1/2 -translate-y-1/2 h-8 w-8" disabled={guessInputDisabled}>
                             <ChevronRight className="w-4 h-4" />
                         </Button>
-                    </div>
+                    </form>
                 )}
             </div>
         </div>
@@ -1146,10 +1149,10 @@ export default function DoodleDuelClient() {
             <div
               key={notif.id}
               className={cn(
-                  "pointer-events-auto w-fit max-w-full animate-in fade-in-0 slide-in-from-bottom-10 rounded-lg px-4 py-2 text-sm text-white shadow-lg",
-                  notif.variant === 'success' && "bg-green-600",
+                  "pointer-events-auto w-fit max-w-full animate-in fade-in-0 slide-in-from-bottom-10 rounded-lg px-4 py-2 text-sm shadow-lg",
+                  notif.variant === 'success' && "bg-green-600 text-white",
                   notif.variant === 'warning' && "bg-yellow-500 text-slate-800",
-                  notif.variant === 'default' && "bg-slate-800"
+                  notif.variant === 'default' && "bg-slate-800 text-white"
               )}
             >
               <div className="flex items-center gap-2">
