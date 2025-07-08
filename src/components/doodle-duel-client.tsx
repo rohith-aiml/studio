@@ -449,11 +449,22 @@ const ChatBox = ({ messages, onSendMessage, disabled }: { messages: Message[], o
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }, [messages]);
 
-    const handleSubmit = (e: React.FormEvent) => {
-        e.preventDefault();
+    const sendMessage = () => {
         if (message.trim()) {
             onSendMessage(message.trim());
             setMessage("");
+        }
+    };
+
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        sendMessage();
+    };
+
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            sendMessage();
         }
     };
     
@@ -478,6 +489,7 @@ const ChatBox = ({ messages, onSendMessage, disabled }: { messages: Message[], o
                         placeholder={disabled ? "Only guessers can chat" : "Type your guess..."}
                         value={message}
                         onChange={(e) => setMessage(e.target.value)}
+                        onKeyDown={handleKeyDown}
                         disabled={disabled}
                     />
                     <Button type="submit" size="icon" className="absolute right-1 top-1/2 -translate-y-1/2 h-8 w-8" disabled={disabled}>
@@ -695,6 +707,7 @@ export default function DoodleDuelClient() {
   useEffect(() => {
     if (!socket) return;
     
+    // Clean up old listeners before attaching new ones to prevent duplicates.
     socket.off();
 
     const onConnect = () => console.log("Connected to server!");
@@ -985,7 +998,7 @@ export default function DoodleDuelClient() {
             </div>
 
             {/* Center Column: Canvas */}
-            <div className="flex flex-col min-h-0 gap-2 order-first md:order-none h-[50%] md:h-auto md:flex-1">
+            <div className="flex flex-col min-h-0 gap-2 order-first md:order-none h-[60%] md:h-auto md:flex-1">
               <div className="relative w-full flex-1 flex items-center justify-center min-h-0">
                   <div className="relative w-full h-full">
                     <DrawingCanvas ref={canvasRef} onDrawStart={handleStartPath} onDrawing={handleDrawPath} isDrawingPlayer={isDrawer} drawingHistory={gameState.drawingHistory}/>
@@ -995,7 +1008,7 @@ export default function DoodleDuelClient() {
             </div>
 
             {/* Right Column: Chat (Desktop) / Bottom Section (Mobile) */}
-            <div className="w-full md:w-[320px] lg:w-[350px] flex flex-col min-h-0 flex-1 md:flex-initial h-[50%] md:h-auto">
+            <div className="w-full md:w-[320px] lg:w-[350px] flex flex-col min-h-0 h-[40%] md:h-auto md:flex-initial">
               
               {/* Mobile View: Combined Scores and Chat */}
               <div className="flex md:hidden flex-row h-full gap-2 min-h-0">
@@ -1032,4 +1045,3 @@ export default function DoodleDuelClient() {
     </>
   );
 }
-

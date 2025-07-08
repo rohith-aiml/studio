@@ -469,9 +469,9 @@ app.prepare().then(() => {
             if (room.gameState.currentWord) {
                 const distance = levenshteinDistance(normalizedGuess, normalizedWord);
                 if (distance === 1) {
-                    socket.emit('closeGuess', "One character wrong");
-                } else if (distance === 2) {
-                    socket.emit('closeGuess', "You're almost correct");
+                    socket.emit('closeGuess', "So close! One letter is off.");
+                } else if (distance <= 3) {
+                    socket.emit('closeGuess', "You're getting warmer!");
                 }
             }
         }
