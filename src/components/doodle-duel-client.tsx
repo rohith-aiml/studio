@@ -965,17 +965,11 @@ export default function DoodleDuelClient() {
     return (
       <div className="flex h-dvh flex-col bg-background p-2">
         <div className="flex items-center justify-between gap-2 py-1">
-            <div className={cn("flex items-center gap-2 text-lg font-bold text-primary w-1/4 transition-colors", gameState.roundTimer <= 15 && "text-red-600 dark:text-red-500")}>
+            <div className="flex items-center gap-2 text-lg font-bold text-primary">
                 <Clock className="w-5 h-5" />
                 <span>{gameState.roundTimer}</span>
             </div>
             <WordDisplay maskedWord={gameState.currentWord} isDrawing={isDrawer} fullWord={fullWord} />
-            <div className="flex items-center justify-end gap-2 w-1/4">
-              <Button onClick={copyInvite} size="icon" variant="ghost" className="h-8 w-8">
-                    <ClipboardCopy className="w-4 h-4" />
-                    <span className="sr-only">Copy Invite Link</span>
-              </Button>
-            </div>
         </div>
         <div className="flex-1 relative min-h-0">
             <DrawingCanvas ref={canvasRef} onDrawStart={()=>{}} onDrawing={()=>{}} isDrawingPlayer={false} drawingHistory={gameState.drawingHistory} />
