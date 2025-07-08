@@ -58,6 +58,7 @@ type Message = {
   playerName: string;
   text: string;
   isCorrect: boolean;
+  points?: number;
 };
 
 type DrawingPoint = { x: number; y: number };
@@ -496,6 +497,7 @@ const ChatBox = ({ messages, onSendMessage, disabled, showForm = true }: { messa
                     )}>
                         <span className={cn(msg.isCorrect && "text-green-600 dark:text-green-400 font-medium")}>
                             <span className="font-bold text-primary">{msg.playerName}: </span> {msg.text}
+                            {msg.isCorrect && msg.points && <span className="font-bold"> (+{msg.points})</span>}
                         </span>
                     </div>
                 ))}
@@ -743,8 +745,7 @@ export default function DoodleDuelClient() {
     addNotification(message, <Sparkles className="w-4 h-4" />, 'warning');
   }, [addNotification]);
   
-  const handlePlayerGuessed = useCallback(({ playerName, guess, points }: { playerName: string, guess?: string, points?: number }) => {
-    // Incorrect guess
+  const handlePlayerGuessed = useCallback(({ playerName, guess }: { playerName: string, guess?: string }) => {
     addNotification(
       <span><span className="font-bold">{playerName}:</span> {guess}</span>,
       <MessageSquare className="w-4 h-4" />
@@ -1078,10 +1079,10 @@ export default function DoodleDuelClient() {
             ) : (
               // DEFAULT VIEW: Canvas and Chat/Players are visible
               <>
-                <div className="relative bg-slate-100 dark:bg-slate-800 rounded-lg" style={{flexBasis: '60%', minHeight: 0}}>
+                <div className="relative bg-slate-100 dark:bg-slate-800 rounded-lg" style={{flexBasis: '50%', minHeight: 0}}>
                     <DrawingCanvas ref={canvasRef} onDrawStart={handleStartPath} onDrawing={handleDrawPath} isDrawingPlayer={isDrawer} drawingHistory={gameState.drawingHistory}/>
                 </div>
-                <div className="flex-shrink-0 flex gap-2 h-full" style={{flexBasis: '40%', minHeight: 0}}>
+                <div className="flex-shrink-0 flex gap-2 h-full" style={{flexBasis: '50%', minHeight: 0}}>
                     <div className="w-2/5 h-full"><Scoreboard players={gameState.players} currentPlayerId={socket?.id ?? null} /></div>
                     <div className="w-3/5 h-full"><ChatBox messages={gameState.messages} showForm={false} /></div>
                 </div>
