@@ -89,6 +89,7 @@ type Notification = {
   id: number;
   content: React.ReactNode;
   icon?: React.ReactNode;
+  variant?: 'default' | 'success' | 'warning';
 };
 
 
@@ -205,35 +206,35 @@ const JoinScreen = ({ onJoin }: { onJoin: (name: string, avatarUrl: string, room
 
 const Scoreboard = ({ players, currentPlayerId }: { players: Player[]; currentPlayerId: string | null; }) => (
   <Card className="h-full flex flex-col min-h-0">
-    <CardHeader className="p-2 md:p-4">
-      <CardTitle className="flex items-center gap-2 text-base md:text-xl">
-        <Users className="text-primary" /> Players
+    <CardHeader className="p-2">
+      <CardTitle className="flex items-center gap-2 text-base">
+        <Users className="text-primary w-4 h-4" /> Players
       </CardTitle>
     </CardHeader>
-    <CardContent className="flex-grow overflow-y-auto p-1 md:p-2 space-y-1 md:space-y-2">
-      <ul className="space-y-2">
+    <CardContent className="flex-grow overflow-y-auto p-1 space-y-1">
+      <ul className="space-y-1">
         {players.sort((a, b) => b.score - a.score).map((p) => (
           <li key={p.id || p.name} className={cn(
-              "flex items-center justify-between p-1.5 rounded-lg transition-all",
+              "flex items-center justify-between p-1.5 rounded-md transition-all",
               p.id === currentPlayerId && "bg-accent/50",
               p.disconnected && "opacity-50",
               p.hasGuessed && !p.isDrawing && "bg-green-100 dark:bg-green-900"
             )}>
             <div className="flex items-center gap-2 min-w-0">
-              <Avatar className="w-8 h-8 shrink-0">
+              <Avatar className="w-6 h-6 shrink-0">
                 <AvatarImage src={p.avatarUrl} />
-                <AvatarFallback className="text-xl">
+                <AvatarFallback className="text-sm">
                     {p.avatarUrl.startsWith('http') ? p.name.charAt(0) : p.avatarUrl}
                 </AvatarFallback>
               </Avatar>
               <div className="flex flex-col min-w-0">
-                <span className="font-medium text-sm truncate">{p.name}</span>
-                {p.disconnected && <span className="text-xs text-muted-foreground">(disconnected)</span>}
+                <span className="font-medium text-xs truncate">{p.name}</span>
+                {p.disconnected && <span className="text-xs text-muted-foreground">(off)</span>}
               </div>
             </div>
-            <div className="flex items-center gap-2 shrink-0">
-              {p.isDrawing && <Pencil className="w-4 h-4 text-primary" />}
-              <span className="font-bold text-base text-primary">{p.score}</span>
+            <div className="flex items-center gap-1 shrink-0">
+              {p.isDrawing && <Pencil className="w-3 h-3 text-primary" />}
+              <span className="font-bold text-sm text-primary">{p.score}</span>
             </div>
           </li>
         ))}
@@ -283,7 +284,7 @@ const DrawingCanvas = React.forwardRef<HTMLCanvasElement, {
         const colorRef = useRef("#000000");
         const lineWidthRef = useRef(5);
 
-        useEffect(() => {
+        const redrawCanvas = useCallback(() => {
             const canvas = ref && 'current' in ref && ref.current;
             if (!canvas) return;
             const ctx = canvas.getContext("2d");
@@ -298,6 +299,9 @@ const DrawingCanvas = React.forwardRef<HTMLCanvasElement, {
             }
 
             ctx.clearRect(0, 0, rect.width, rect.height);
+            ctx.fillStyle = 'white';
+            ctx.fillRect(0, 0, rect.width, rect.height);
+
 
             drawingHistory.forEach(({ path, color, lineWidth }) => {
                 ctx.strokeStyle = color;
@@ -311,7 +315,17 @@ const DrawingCanvas = React.forwardRef<HTMLCanvasElement, {
                 });
                 ctx.stroke();
             });
-        }, [drawingHistory, ref]);
+        }, [ref, drawingHistory]);
+
+        useEffect(() => {
+            redrawCanvas();
+            const canvas = ref && 'current' in ref && ref.current;
+            const resizeObserver = new ResizeObserver(() => redrawCanvas());
+            if (canvas) resizeObserver.observe(canvas);
+            return () => {
+                if (canvas) resizeObserver.unobserve(canvas);
+            }
+        }, [drawingHistory, ref, redrawCanvas]);
 
         const getCoords = (e: MouseEvent | TouchEvent): DrawingPoint | null => {
             if (!ref || typeof ref === 'function' || !ref.current) return null;
@@ -328,10 +342,11 @@ const DrawingCanvas = React.forwardRef<HTMLCanvasElement, {
             } else {
                 return null;
             }
-
+            
+            const dpr = window.devicePixelRatio || 1;
             return { 
-                x: clientX - rect.left, 
-                y: clientY - rect.top
+                x: (clientX - rect.left), 
+                y: (clientY - rect.top)
             };
         };
         
@@ -480,10 +495,10 @@ const ChatBox = ({ messages, onSendMessage, disabled, showForm = true }: { messa
     
     return (
         <Card className="flex-grow flex flex-col min-h-0 h-full">
-            <CardHeader className="p-2 md:p-4"><CardTitle className="text-base md:text-xl">Chat</CardTitle></CardHeader>
+            <CardHeader className="p-2"><CardTitle className="text-base">Chat</CardTitle></CardHeader>
             <CardContent className="flex-grow overflow-y-auto p-2 space-y-2">
                 {messages.map((msg, i) => (
-                    <div key={i} className={cn("p-2 rounded-lg text-sm", msg.isCorrect ? "bg-green-100 dark:bg-green-900" : "bg-muted/50")}>
+                    <div key={i} className={cn("p-1.5 rounded-md text-xs", msg.isCorrect ? "bg-green-100 dark:bg-green-900" : "bg-muted/50")}>
                         {msg.isCorrect ? (
                              <span className="text-green-600 dark:text-green-400 font-medium">{msg.text}</span>
                         ) : (
@@ -702,7 +717,6 @@ export default function DoodleDuelClient() {
     let newSocket: Socket;
 
     const initializeSocket = () => {
-        // Disconnect any existing socket
         if (socket) {
             socket.disconnect();
         }
@@ -720,12 +734,12 @@ export default function DoodleDuelClient() {
     return () => {
         if (newSocket) newSocket.disconnect();
     };
-}, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  
-  const addNotification = useCallback((content: React.ReactNode, icon?: React.ReactNode) => {
+  const addNotification = useCallback((content: React.ReactNode, icon?: React.ReactNode, variant: Notification['variant'] = 'default') => {
     const id = notificationIdCounter.current++;
-    setNotifications(prev => [...prev, { id, content, icon }]);
+    setNotifications(prev => [...prev, { id, content, icon, variant }]);
     setTimeout(() => {
         setNotifications(prev => prev.filter(n => n.id !== id));
     }, 4000);
@@ -733,13 +747,14 @@ export default function DoodleDuelClient() {
 
   const handleCloseGuess = useCallback((message: string) => {
     notificationSoundRef.current?.play().catch(e => console.error("Error playing sound:", e));
-    addNotification(message, <Sparkles className="w-4 h-4 text-yellow-300" />);
+    addNotification(message, <Sparkles className="w-4 h-4" />, 'warning');
   }, [addNotification]);
   
   const handlePlayerGuessed = useCallback(({ playerName, text }: { playerName: string, text: string }) => {
     addNotification(
       <span><span className="font-bold">{playerName}:</span> {text}</span>,
-      <MessageSquare className="w-4 h-4" />
+      <MessageSquare className="w-4 h-4" />,
+      'default'
     );
   }, [addNotification]);
 
@@ -747,19 +762,18 @@ export default function DoodleDuelClient() {
     notificationSoundRef.current?.play().catch(e => console.error("Error playing sound:", e));
     addNotification(
       <span><span className="font-bold">{playerName}</span> guessed the word!</span>,
-      <Check className="w-4 h-4 text-green-400" />
+      <Check className="w-4 h-4" />,
+      'success'
     );
   }, [addNotification]);
 
   useEffect(() => {
     if (!socket) return;
     
-    // Clean up old listeners before attaching new ones to prevent duplicates.
     socket.off();
 
     const onConnect = () => {
         console.log("Connected to server!");
-        // If we were in a room before, try to rejoin
         if (name && roomId) {
             socket.emit("joinRoom", { name, avatarUrl: me?.avatarUrl || AVATARS[0].url, roomId });
         }
@@ -833,7 +847,7 @@ export default function DoodleDuelClient() {
     socket.on("aiSuggestion", onAiSuggestion);
     socket.on("closeGuess", handleCloseGuess);
     socket.on("playerGuessed", handlePlayerGuessed);
-    socket.on("correctGuessNotification", handleCorrectGuessNotification);
+    socket.on("correctGuessNotification", onCorrectGuessNotification);
     socket.on("error", onError);
 
     return () => {
@@ -851,10 +865,10 @@ export default function DoodleDuelClient() {
         socket.off("aiSuggestion", onAiSuggestion);
         socket.off("closeGuess", handleCloseGuess);
         socket.off("playerGuessed", handlePlayerGuessed);
-        socket.off("correctGuessNotification", handleCorrectGuessNotification);
+        socket.off("correctGuessNotification", onCorrectGuessNotification);
         socket.off("error", onError);
     };
-  }, [socket, name, roomId, me, toast, handleCloseGuess, handlePlayerGuessed, handleCorrectGuessNotification]);
+  }, [socket, name, roomId, me, toast, handleCloseGuess, handlePlayerGuessed, handleCorrectGuessNotification, addNotification]);
   
   useEffect(() => {
     if (canvasRef.current && (canvasRef.current as any).updateBrush) {
@@ -948,97 +962,6 @@ export default function DoodleDuelClient() {
 
   const activePlayers = gameState.players.filter(p => !p.disconnected);
   
-  // NEW: Dedicated layout for mobile guessers
-  if (isMobile && !isDrawer && gameState.isRoundActive) {
-    return (
-      <>
-        <main className="flex h-dvh max-h-dvh flex-col overflow-hidden bg-background">
-          {/* Top Bar */}
-          <div className="flex-shrink-0">
-            <div className="flex items-center justify-between gap-4 p-2">
-              <div className="flex w-1/4 items-center gap-2 text-lg font-bold text-primary">
-                <Clock className="h-5 w-5" />
-                <span>{gameState.roundTimer}</span>
-              </div>
-              <WordDisplay
-                maskedWord={gameState.currentWord}
-                isDrawing={false}
-                fullWord=""
-              />
-              <div className="w-1/4" />
-            </div>
-          </div>
-
-          {/* Canvas */}
-          <div className="relative flex-1 p-2 pb-0 min-h-0">
-            <DrawingCanvas
-              ref={canvasRef}
-              onDrawStart={() => {}}
-              onDrawing={() => {}}
-              isDrawingPlayer={false}
-              drawingHistory={gameState.drawingHistory}
-            />
-          </div>
-
-          {/* Guess Input */}
-          <div className="flex-shrink-0 border-t bg-background p-2">
-            <form onSubmit={handleMobileGuessSubmit}>
-              <div className="relative">
-                <Input
-                  placeholder={
-                    guessInputDisabled
-                      ? 'You guessed correctly!'
-                      : 'Type your guess...'
-                  }
-                  value={mobileGuess}
-                  onChange={(e) => setMobileGuess(e.target.value)}
-                  disabled={guessInputDisabled}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault()
-                      handleMobileGuessSubmit(e)
-                    }
-                  }}
-                />
-                <Button
-                  type="submit"
-                  size="icon"
-                  className="absolute right-1 top-1/2 h-8 w-8 -translate-y-1/2"
-                  disabled={guessInputDisabled}
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-              </div>
-            </form>
-          </div>
-        </main>
-
-        {/* Notifications */}
-        <div className="pointer-events-none fixed bottom-[4.5rem] right-4 z-50 flex w-full max-w-xs flex-col items-end gap-2">
-          {notifications.map((notif) => (
-            <div
-              key={notif.id}
-              className="pointer-events-auto animate-in fade-in-0 slide-in-from-bottom-10 rounded-lg bg-slate-800 px-4 py-2 text-sm text-white shadow-lg"
-            >
-              <div className="flex items-center gap-2">
-                {notif.icon}
-                <div>{notif.content}</div>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        <audio
-          ref={notificationSoundRef}
-          src="/notification.mp3"
-          preload="auto"
-          className="hidden"
-        />
-        <Toaster />
-      </>
-    )
-  }
-
   return (
     <>
       <Dialog open={isDrawer && wordChoices.length > 0}>
@@ -1133,82 +1056,101 @@ export default function DoodleDuelClient() {
           </div>
       ) : (
         <>
-            {/* Main Game Content */}
+            {/* Top Bar */}
             <div className="flex-shrink-0">
                 <div className="flex items-center justify-between gap-4 p-2">
-                    <div className="flex items-center gap-2 text-lg font-bold text-primary w-1/4">
+                    <div className={cn("flex items-center gap-2 text-lg font-bold text-primary w-1/4 transition-colors", gameState.roundTimer <= 15 && "text-red-600 dark:text-red-500")}>
                         <Clock className="w-5 h-5" />
                         <span>{gameState.roundTimer}</span>
                     </div>
                     <WordDisplay maskedWord={gameState.currentWord} isDrawing={isDrawer} fullWord={fullWord} />
                     <div className="flex items-center justify-end gap-2 w-1/4">
-                    <span className="text-sm font-bold hidden md:inline">ID: {roomId}</span>
-                    <Button onClick={copyInvite} size="sm" variant="outline">
-                        <ClipboardCopy className="w-4 h-4 md:mr-2" />
-                        <span className="hidden md:inline">Copy Link</span>
-                    </Button>
+                        <span className="text-sm font-bold hidden md:inline">ID: {roomId}</span>
+                        <Button onClick={copyInvite} size="sm" variant="outline">
+                            <ClipboardCopy className="w-4 h-4 md:mr-2" />
+                            <span className="hidden md:inline">Copy Link</span>
+                        </Button>
                     </div>
                 </div>
             </div>
           
-            <div className="flex-1 flex flex-col md:flex-row gap-4 min-h-0 p-2 md:p-4">
-                {/* Left Column: Scoreboard (Desktop) */}
-                <div className="w-full md:w-[280px] flex-shrink-0 hidden md:flex">
+            {/* Desktop Layout */}
+            <div className="flex-1 hidden md:flex flex-row gap-4 min-h-0 p-2 md:p-4">
+                <div className="w-full md:w-[280px] flex-shrink-0">
                     <Scoreboard players={gameState.players} currentPlayerId={socket?.id ?? null} />
                 </div>
-
-                {/* Center Column: Canvas */}
-                <div className="flex flex-col min-h-0 gap-2 h-full md:h-auto md:flex-1">
-                    <div className="relative w-full flex-1 flex items-center justify-center min-h-0">
-                        <div className="relative w-full h-full">
-                            <DrawingCanvas ref={canvasRef} onDrawStart={handleStartPath} onDrawing={handleDrawPath} isDrawingPlayer={isDrawer} drawingHistory={gameState.drawingHistory}/>
-                        </div>
+                <div className="flex flex-col min-h-0 gap-2 flex-1">
+                    <div className="relative w-full flex-1">
+                        <DrawingCanvas ref={canvasRef} onDrawStart={handleStartPath} onDrawing={handleDrawPath} isDrawingPlayer={isDrawer} drawingHistory={gameState.drawingHistory}/>
                     </div>
                     {isDrawer && <Toolbar color={currentColor} setColor={setCurrentColor} lineWidth={currentLineWidth} setLineWidth={setCurrentLineWidth} onUndo={handleUndo} onClear={handleClear} disabled={!isDrawer} />}
                 </div>
+                <div className="w-full md:w-[320px] lg:w-[350px] flex-shrink-0">
+                    <ChatBox messages={gameState.messages} onSendMessage={handleGuess} disabled={guessInputDisabled} showForm={!isDrawer} />
+                </div>
+            </div>
 
-                {/* Right Column: Chat (Desktop) / Bottom Section (Mobile) */}
-                <div className="w-full md:w-[320px] lg:w-[350px] flex-col min-h-0 h-full md:h-auto md:flex-initial hidden md:flex">
-                    <ChatBox messages={gameState.messages} onSendMessage={handleGuess} disabled={guessInputDisabled} showForm={true} />
+            {/* Mobile Layout */}
+            <div className="flex flex-col flex-1 md:hidden min-h-0 p-2 gap-2">
+                <div className="flex-1 relative min-h-0">
+                     <DrawingCanvas ref={canvasRef} onDrawStart={handleStartPath} onDrawing={handleDrawPath} isDrawingPlayer={isDrawer} drawingHistory={gameState.drawingHistory}/>
                 </div>
                 
-                {/* Mobile Drawer view */}
-                <div className="flex md:hidden flex-col h-full gap-2 min-h-0">
-                    <div className="flex-1 flex flex-row h-full gap-2 min-h-0">
-                        <div className="w-2/5 h-full"><Scoreboard players={gameState.players} currentPlayerId={socket?.id ?? null} /></div>
-                        <div className="w-3/5 h-full"><ChatBox messages={gameState.messages} showForm={false} /></div>
-                    </div>
-                    <div className="block md:hidden flex-shrink-0">
-                        <form onSubmit={handleMobileGuessSubmit}>
-                            <div className="relative">
-                                <Input
-                                    placeholder={guessInputDisabled ? "Only guessers can chat" : "Type your guess..."}
-                                    value={mobileGuess}
-                                    onChange={(e) => setMobileGuess(e.target.value)}
-                                    disabled={guessInputDisabled}
-                                />
-                                <Button type="submit" size="icon" className="absolute right-1 top-1/2 -translate-y-1/2 h-8 w-8" disabled={guessInputDisabled}>
-                                    <ChevronRight className="w-4 h-4" />
-                                </Button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
+                {isDrawer ? (
+                    <Toolbar color={currentColor} setColor={setCurrentColor} lineWidth={currentLineWidth} setLineWidth={setCurrentLineWidth} onUndo={handleUndo} onClear={handleClear} disabled={!isDrawer} />
+                ) : (
+                    <>
+                        <div className="flex flex-row gap-2 h-[150px] flex-shrink-0">
+                            <div className="w-2/5"><Scoreboard players={gameState.players} currentPlayerId={socket?.id ?? null} /></div>
+                            <div className="w-3/5"><ChatBox messages={gameState.messages} showForm={false} /></div>
+                        </div>
+                        <div className="flex-shrink-0">
+                            <form onSubmit={handleMobileGuessSubmit}
+                                  onKeyDown={(e) => {
+                                      if (e.key === 'Enter' && !e.shiftKey) {
+                                          e.preventDefault();
+                                          handleMobileGuessSubmit(e);
+                                      }
+                                  }}
+                            >
+                                <div className="relative">
+                                    <Input
+                                        placeholder={guessInputDisabled ? "You guessed it!" : "Type your guess..."}
+                                        value={mobileGuess}
+                                        onChange={(e) => setMobileGuess(e.target.value)}
+                                        disabled={guessInputDisabled}
+                                    />
+                                    <Button type="submit" size="icon" className="absolute right-1 top-1/2 -translate-y-1/2 h-8 w-8" disabled={guessInputDisabled}>
+                                        <ChevronRight className="w-4 h-4" />
+                                    </Button>
+                                </div>
+                            </form>
+                        </div>
+                    </>
+                )}
             </div>
         </>
       )}
       </main>
 
-      <div className="fixed bottom-4 right-4 z-50 flex flex-col items-end gap-2 w-full max-w-xs pointer-events-none md:top-4 md:bottom-auto">
-        {notifications.map((notif) => (
-            <div key={notif.id} className="pointer-events-auto bg-slate-800 text-white rounded-lg px-4 py-2 text-sm shadow-lg animate-in fade-in-0 slide-in-from-bottom-10">
-                <div className="flex items-center gap-2">
-                    {notif.icon}
-                    <div>{notif.content}</div>
-                </div>
+      <div className="pointer-events-none fixed bottom-4 right-4 z-50 flex w-full max-w-xs flex-col items-end gap-2">
+          {notifications.map((notif) => (
+            <div
+              key={notif.id}
+              className={cn(
+                  "pointer-events-auto w-fit max-w-full animate-in fade-in-0 slide-in-from-bottom-10 rounded-lg px-4 py-2 text-sm text-white shadow-lg",
+                  notif.variant === 'success' && "bg-green-600",
+                  notif.variant === 'warning' && "bg-yellow-500 text-slate-800",
+                  notif.variant === 'default' && "bg-slate-800"
+              )}
+            >
+              <div className="flex items-center gap-2">
+                {notif.icon}
+                <div>{notif.content}</div>
+              </div>
             </div>
-        ))}
-      </div>
+          ))}
+        </div>
 
       <audio ref={notificationSoundRef} src="/notification.mp3" preload="auto" className="hidden" />
       <Toaster />
