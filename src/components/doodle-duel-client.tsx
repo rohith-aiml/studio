@@ -545,7 +545,7 @@ const GameOverScreen = ({ players, ownerId, currentSocketId, onPlayAgain }: { pl
         }
         const timer = setTimeout(() => setShowConfetti(true), 500);
         
-        gameOverAudioRef.current?.play().catch(e => console.error("Error playing sound:", e));
+        // gameOverAudioRef.current?.play().catch(e => console.error("Error playing sound:", e));
 
         return () => clearTimeout(timer);
     }, []);
@@ -747,7 +747,7 @@ export default function DoodleDuelClient() {
   }, []);
 
   const handleCloseGuess = useCallback((message: string) => {
-    notificationSoundRef.current?.play().catch(e => console.error("Error playing sound:", e));
+    // notificationSoundRef.current?.play().catch(e => console.error("Error playing sound:", e));
     addNotification(message, <Sparkles className="w-4 h-4" />, 'warning');
   }, [addNotification]);
   
@@ -760,7 +760,7 @@ export default function DoodleDuelClient() {
   }, [addNotification]);
 
   const handleCorrectGuessNotification = useCallback(({ playerName }: { playerName: string }) => {
-    notificationSoundRef.current?.play().catch(e => console.error("Error playing sound:", e));
+    // notificationSoundRef.current?.play().catch(e => console.error("Error playing sound:", e));
     addNotification(
       <span><span className="font-bold">{playerName}</span> guessed the word!</span>,
       <Check className="w-4 h-4" />,
@@ -816,7 +816,7 @@ export default function DoodleDuelClient() {
         });
     };
     const onAiSuggestion = (result: AnalyzeDrawingHistoryOutput) => {
-        notificationSoundRef.current?.play().catch(e => console.error("Error playing sound:", e));
+        // notificationSoundRef.current?.play().catch(e => console.error("Error playing sound:", e));
         toast({
             title: "AI Suggestion",
             description: (<div className="flex items-center gap-2"><Vote /><div><p>{result.reason}</p><Button size="sm" className="mt-2">Vote to Skip</Button></div></div>),
@@ -869,7 +869,7 @@ export default function DoodleDuelClient() {
         socket.off("correctGuessNotification", handleCorrectGuessNotification);
         socket.off("error", onError);
     };
-  }, [socket, name, roomId, me, toast, handleCloseGuess, handlePlayerGuessed, handleCorrectGuessNotification, addNotification]);
+  }, [socket, name, roomId, me, toast, handleCloseGuess, handlePlayerGuessed, handleCorrectGuessNotification]);
   
   useEffect(() => {
     if (canvasRef.current && (canvasRef.current as any).updateBrush) {
@@ -1170,3 +1170,4 @@ export default function DoodleDuelClient() {
     </>
   );
 }
+
