@@ -26,7 +26,6 @@ import {
   Eraser,
   Eye,
   EyeOff,
-  MessageSquare,
   PartyPopper,
   Pencil,
   Sparkles,
@@ -98,6 +97,7 @@ const ROUND_TIME = 90; // in seconds
 const AI_CHECK_INTERVAL = 15000; // 15 seconds
 const ROUND_OPTIONS = [1, 2, 3, 5, 10];
 const WORD_CHOICE_TIME = 15;
+const NOTIFICATION_DURATION = 4000; // 4 seconds
 
 const DRAWING_COLORS = [
   "#000000", "#ef4444", "#fb923c", "#facc15", "#4ade80", "#22d3ee", "#3b82f6", "#a78bfa", "#f472b6", "#ffffff",
@@ -479,12 +479,7 @@ const ChatBox = ({ messages, onSendMessage, disabled, showForm = true }: { messa
             setMessage("");
         }
     };
-
-    const handleSubmit = (e: React.FormEvent) => {
-        e.preventDefault();
-        sendMessage();
-    };
-
+    
     const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
@@ -508,7 +503,7 @@ const ChatBox = ({ messages, onSendMessage, disabled, showForm = true }: { messa
                 <div ref={messagesEndRef} />
             </CardContent>
             {showForm && (
-                <form onSubmit={handleSubmit} className="p-2 border-t">
+                <div className="p-2 border-t">
                     <div className="relative">
                         <Input
                             placeholder={disabled ? "Only guessers can chat" : "Type your guess..."}
@@ -517,11 +512,11 @@ const ChatBox = ({ messages, onSendMessage, disabled, showForm = true }: { messa
                             onKeyDown={handleKeyDown}
                             disabled={disabled}
                         />
-                        <Button type="submit" size="icon" className="absolute right-1 top-1/2 -translate-y-1/2 h-8 w-8" disabled={disabled}>
+                        <Button type="button" onClick={sendMessage} size="icon" className="absolute right-1 top-1/2 -translate-y-1/2 h-8 w-8" disabled={disabled}>
                             <ChevronRight className="w-4 h-4" />
                         </Button>
                     </div>
-                </form>
+                </div>
             )}
         </Card>
     );
@@ -532,7 +527,7 @@ const GameOverScreen = ({ players, ownerId, currentSocketId, onPlayAgain }: { pl
     const topThree = winners.slice(0, 3);
     const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
     const [showConfetti, setShowConfetti] = useState(false);
-    const gameOverAudioRef = useRef<HTMLAudioElement>(null);
+    // const gameOverAudioRef = useRef<HTMLAudioElement>(null);
 
 
     useEffect(() => {
@@ -690,10 +685,11 @@ export default function DoodleDuelClient() {
   const [selectedRounds, setSelectedRounds] = useState(ROUND_OPTIONS[2]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [mobileGuess, setMobileGuess] = useState("");
+  const [isInputFocused, setIsInputFocused] = useState(false);
   
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const aiCheckIntervalRef = useRef<NodeJS.Timeout>();
-  const notificationSoundRef = useRef<HTMLAudioElement>(null);
+  // const notificationSoundRef = useRef<HTMLAudioElement>(null);
   const notificationIdCounter = useRef(0);
 
   const { toast } = useToast();
@@ -741,7 +737,7 @@ export default function DoodleDuelClient() {
     setNotifications(prev => [...prev, { id, content, icon, variant }]);
     setTimeout(() => {
         setNotifications(prev => prev.filter(n => n.id !== id));
-    }, 4000);
+    }, NOTIFICATION_DURATION);
   }, []);
 
   const handleCloseGuess = useCallback((message: string) => {
@@ -749,14 +745,6 @@ export default function DoodleDuelClient() {
     addNotification(message, <Sparkles className="w-4 h-4" />, 'warning');
   }, [addNotification]);
   
-  const handlePlayerGuessed = useCallback(({ playerName, text }: { playerName: string, text: string }) => {
-    addNotification(
-      <span><span className="font-bold">{playerName}:</span> {text}</span>,
-      <MessageSquare className="w-4 h-4" />,
-      'default'
-    );
-  }, [addNotification]);
-
   const handleCorrectGuessNotification = useCallback(({ playerName }: { playerName: string }) => {
     // notificationSoundRef.current?.play().catch(e => console.error("Error playing sound:", e));
     addNotification(
@@ -845,7 +833,6 @@ export default function DoodleDuelClient() {
     socket.on("roundEnd", onRoundEnd);
     socket.on("aiSuggestion", onAiSuggestion);
     socket.on("closeGuess", handleCloseGuess);
-    socket.on("playerGuessed", handlePlayerGuessed);
     socket.on("correctGuessNotification", handleCorrectGuessNotification);
     socket.on("error", onError);
 
@@ -863,11 +850,10 @@ export default function DoodleDuelClient() {
         socket.off("roundEnd", onRoundEnd);
         socket.off("aiSuggestion", onAiSuggestion);
         socket.off("closeGuess", handleCloseGuess);
-        socket.off("playerGuessed", handlePlayerGuessed);
         socket.off("correctGuessNotification", handleCorrectGuessNotification);
         socket.off("error", onError);
     };
-  }, [socket, name, roomId, me, toast, handleCloseGuess, handlePlayerGuessed, handleCorrectGuessNotification]);
+  }, [socket, name, roomId, me, toast, handleCloseGuess, handleCorrectGuessNotification]);
   
   useEffect(() => {
     if (canvasRef.current && (canvasRef.current as any).updateBrush) {
@@ -925,11 +911,17 @@ export default function DoodleDuelClient() {
       }
   };
 
-  const handleMobileGuessSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleMobileGuess = () => {
     handleGuess(mobileGuess);
     setMobileGuess("");
   };
+
+  const handleMobileKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        handleMobileGuess();
+    }
+  }
 
   const handlePlayAgain = () => socket?.emit("playAgain");
   const handleWordChoice = (word: string) => {
@@ -1073,15 +1065,18 @@ export default function DoodleDuelClient() {
                 </div>
             </div>
 
-            {/* Canvas Area - fixed height so it doesn't shrink */}
-            <div className="flex-shrink-0 relative h-[40vh] bg-slate-100 dark:bg-slate-800">
-                <DrawingCanvas ref={canvasRef} onDrawStart={handleStartPath} onDrawing={handleDrawPath} isDrawingPlayer={isDrawer} drawingHistory={gameState.drawingHistory}/>
-            </div>
-            
-            {/* Player List & Chat History - This will now be the flexible part that shrinks */}
-            <div className="flex-1 flex gap-2 p-2 border-t min-h-0">
-                <div className="w-2/5 h-full"><Scoreboard players={gameState.players} currentPlayerId={socket?.id ?? null} /></div>
-                <div className="w-3/5 h-full"><ChatBox messages={gameState.messages} showForm={false} /></div>
+            {/* Main content area */}
+            <div className="flex-grow flex flex-col min-h-0">
+                <div className="relative flex-grow bg-slate-100 dark:bg-slate-800">
+                    <DrawingCanvas ref={canvasRef} onDrawStart={handleStartPath} onDrawing={handleDrawPath} isDrawingPlayer={isDrawer} drawingHistory={gameState.drawingHistory}/>
+                </div>
+                
+                {(!isInputFocused || isDrawer) && (
+                    <div className="flex-shrink-0 flex gap-2 p-2 border-t min-h-0 h-[25vh]">
+                        <div className="w-2/5 h-full"><Scoreboard players={gameState.players} currentPlayerId={socket?.id ?? null} /></div>
+                        <div className="w-3/5 h-full"><ChatBox messages={gameState.messages} showForm={false} /></div>
+                    </div>
+                )}
             </div>
 
             {/* Input or Toolbar */}
@@ -1089,18 +1084,21 @@ export default function DoodleDuelClient() {
                 {isDrawer ? (
                      <Toolbar color={currentColor} setColor={setCurrentColor} lineWidth={currentLineWidth} setLineWidth={setCurrentLineWidth} onUndo={handleUndo} onClear={handleClear} disabled={!isDrawer} />
                 ) : (
-                    <form onSubmit={handleMobileGuessSubmit} className="relative">
+                    <div className="relative">
                         <Input
                             placeholder={guessInputDisabled ? "You've guessed it!" : "Type your guess..."}
                             value={mobileGuess}
                             onChange={(e) => setMobileGuess(e.target.value)}
+                            onKeyDown={handleMobileKeyDown}
                             disabled={guessInputDisabled}
+                            onFocus={() => setIsInputFocused(true)}
+                            onBlur={() => setIsInputFocused(false)}
                             className="pr-12"
                         />
-                        <Button type="submit" size="icon" className="absolute right-1 top-1/2 -translate-y-1/2 h-8 w-8" disabled={guessInputDisabled}>
+                        <Button type="button" onClick={handleMobileGuess} size="icon" className="absolute right-1 top-1/2 -translate-y-1/2 h-8 w-8" disabled={guessInputDisabled}>
                             <ChevronRight className="w-4 h-4" />
                         </Button>
-                    </form>
+                    </div>
                 )}
             </div>
         </div>

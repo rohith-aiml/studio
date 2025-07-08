@@ -467,13 +467,14 @@ app.prepare().then(() => {
             }
              broadcastGameState(currentRoomId);
         } else {
-            io.to(currentRoomId).emit("playerGuessed", { playerName: player.name, text });
+            room.gameState.messages.push({ playerName: player.name, text, isCorrect: false });
             if (room.gameState.currentWord) {
                 const distance = levenshteinDistance(normalizedGuess, normalizedWord);
                 if (distance === 1) {
                     socket.emit('closeGuess', "So close! One letter is off.");
                 }
             }
+            broadcastGameState(currentRoomId);
         }
     });
 
